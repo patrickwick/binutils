@@ -111,9 +111,190 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
 }
 
 fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
-    // TODO: NYI
-    _ = out;
-    _ = elf;
+    try out.print(
+        \\There are {d} section headers, starting at offset 0x{x}
+        \\
+        \\
+    , .{ elf.sections.items.len, elf.e_shoff });
+
+    const indentation = indentation: {
+        var longest_name: usize = 0;
+        for (elf.sections.items) |section| longest_name = @max(longest_name, section.name.len);
+        break :indentation longest_name;
+    };
+
+    try out.writeAll(
+        \\Section Headers:
+        \\  [Nr] Name
+    );
+    const correction = 3;
+    try out.writeByteNTimes(' ', @max(correction, indentation) - correction);
+    // TODO: Lk Inf Al
+    // try out.writeAll(
+    //     \\Type          Address            Offset   Size     ES   Flg Lk Inf Al
+    //     \\
+    // );
+    try out.writeAll(
+        \\Type          Address            Offset   Size     ES   Flg
+        \\
+    );
+
+    for (elf.sections.items, 0..) |section, i| {
+        // TODO: extract function
+        const type_name = switch (section.header.sh_type) {
+            std.elf.SHT_NULL => "NULL",
+            std.elf.SHT_PROGBITS => "PROGBITS",
+            std.elf.SHT_SYMTAB => "SYMTAB",
+            std.elf.SHT_STRTAB => "STRTAB",
+            std.elf.SHT_RELA => "RELA",
+            std.elf.SHT_HASH => "HASH",
+            std.elf.SHT_DYNAMIC => "DYNAMIC",
+            std.elf.SHT_NOTE => "NOTE",
+            std.elf.SHT_NOBITS => "NOBITS",
+            std.elf.SHT_REL => "REL",
+            std.elf.SHT_SHLIB => "SHLIB",
+            std.elf.SHT_DYNSYM => "DYNSYM",
+            std.elf.SHT_INIT_ARRAY => "INIT_ARRAY",
+            std.elf.SHT_FINI_ARRAY => "FINI_ARRAY",
+            std.elf.SHT_PREINIT_ARRAY => "PREINIT_ARRAY",
+            std.elf.SHT_GROUP => "GROUP",
+            std.elf.SHT_SYMTAB_SHNDX => "SYMTAB_SHNDX",
+            std.elf.SHT_LOOS => "LOOS",
+            std.elf.SHT_LLVM_ADDRSIG => "LLVM_ADDRSIG",
+            std.elf.SHT_GNU_HASH => "GNU_HASH",
+            std.elf.SHT_GNU_VERDEF => "GNU_VERDEF",
+            std.elf.SHT_GNU_VERNEED => "GNU_VERNEED",
+            std.elf.SHT_GNU_VERSYM => "GNU_VERSYM",
+            std.elf.SHT_LOPROC => "LOPROC",
+            std.elf.SHT_X86_64_UNWIND => "X86_64_UNWIND",
+            std.elf.SHT_HIPROC => "HIPROC",
+            std.elf.SHT_LOUSER => "LOUSER",
+            std.elf.SHT_HIUSER => "HIUSER",
+            else => "INVALID",
+        };
+
+        try out.print("  [{s}{d}] {s} ", .{ if (i < 10) " " else "", i, section.name });
+        try out.writeByteNTimes(' ', indentation - section.name.len);
+        try out.writeAll(type_name);
+        const type_indentation = 14;
+        try out.writeByteNTimes(' ', type_indentation - type_name.len);
+
+        // TODO: extract function for fixed hex format
+        var address_bytes = (std.mem.toBytes(@as(u64, section.header.sh_addr))[0..8]).*;
+        std.mem.reverse(u8, &address_bytes);
+        const address_hex = std.fmt.bytesToHex(address_bytes, .lower);
+
+        // TODO: truncated if 64bit offset is above the 32bit limit
+        var offset_bytes = (std.mem.toBytes(section.header.sh_offset)[0..3]).*;
+        std.mem.reverse(u8, &offset_bytes);
+        const offset_hex = std.fmt.bytesToHex(offset_bytes, .lower);
+
+        var size_bytes = (std.mem.toBytes(section.header.sh_size)[0..3]).*;
+        std.mem.reverse(u8, &size_bytes);
+        const size_hex = std.fmt.bytesToHex(size_bytes, .lower);
+
+        var entry_size_bytes = (std.mem.toBytes(section.header.sh_entsize)[0..1]).*;
+        std.mem.reverse(u8, &entry_size_bytes);
+        const entry_size_hex = std.fmt.bytesToHex(entry_size_bytes, .lower);
+
+        // TODO: extract function?
+        const flags = flags: {
+            var f = [_]u8{' '} ** 3;
+            var offset: u8 = 0;
+
+            // sorted according to "Key to Flags" legend
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_WRITE) != 0) {
+                f[offset] = 'W';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_ALLOC) != 0) {
+                f[offset] = 'A';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_EXECINSTR) != 0) {
+                f[offset] = 'X';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_MERGE) != 0) {
+                f[offset] = 'M';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_STRINGS) != 0) {
+                f[offset] = 'S';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_INFO_LINK) != 0) {
+                f[offset] = 'I';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_LINK_ORDER) != 0) {
+                f[offset] = 'L';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_OS_NONCONFORMING) != 0) {
+                f[offset] = 'O';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_GROUP) != 0) {
+                f[offset] = 'G';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_TLS) != 0) {
+                f[offset] = 'T';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_COMPRESSED) != 0) {
+                f[offset] = 'C';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_EXCLUDE) != 0) {
+                f[offset] = 'E';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_GNU_RETAIN) != 0) {
+                f[offset] = 'R';
+                offset += 1;
+            }
+
+            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_X86_64_LARGE) != 0) {
+                f[offset] = 'l';
+                offset += 1;
+            }
+
+            break :flags f;
+        };
+
+        try out.print("0x{s} 0x{s} 0x{s} 0x{s} {s}\n", .{
+            address_hex,
+            offset_hex,
+            size_hex,
+            entry_size_hex,
+            flags,
+        });
+
+        // TODO: links (Lk)
+        // TODO: info (Inf)
+        // TODO: alignment (Al)
+    }
+
+    try out.writeAll(
+        \\Key to Flags:
+        \\  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+        \\  L (link order), O (extra OS processing required), G (group), T (TLS),
+        \\  C (compressed), E (exclude), R (retain), l (large)
+    );
 }
 
 fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {

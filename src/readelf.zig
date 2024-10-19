@@ -26,57 +26,85 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
 
 fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
     const eb = elf.e_ident.toBuffer();
+
     const class = switch (elf.e_ident.ei_class) {
         .elfclass64 => "ELF64",
         .elfclass32 => "ELF32",
     };
+
     const data = switch (elf.e_ident.ei_data) {
         .little => "2's complement, little endian",
         .big => "2's complement, big endian",
+    };
+
+    const version = switch (elf.e_ident.ei_version) {
+        .ev_current => "1 (current)",
+    };
+
+    const os_abi = switch (elf.e_ident.ei_osabi) {
+        .NONE => "UNIX - System V",
+        // TODO: add all verbose names
+        else => |abi| @tagName(abi),
+    };
+
+    const file_type = switch (elf.e_type) {
+        .DYN => "DYN (Position-Independent Executable file)",
+        // TODO: add all verbose names
+        else => |file_type| @tagName(file_type),
+    };
+
+    const machine = switch (elf.e_machine) {
+        .X86_64 => "Advanced Micro Devices X86-64",
+        // TODO: add all verbose names
+        else => |machine| @tagName(machine),
     };
 
     // TODO: print leading zeroes in hex values for constant width and adapt test
     try out.print(
         \\ELF Header:
         \\  Magic:   {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        \\
+    , .{ eb[0], eb[1], eb[2], eb[3], eb[4], eb[5], eb[6], eb[7], eb[8], eb[9], eb[10], eb[11], eb[12], eb[13], eb[14], eb[15] });
+
+    try out.print(
         \\  Class:                             {s}
         \\  Data:                              {s}
-        \\  Version:
-        \\  OS/ABI:
-        \\  ABI Version:
-        \\  Type:
-        \\  Machine:
-        \\  Version:
-        \\  Entry point address:
-        \\  Start of program headers:
-        \\  Start of section headers:
-        \\  Flags:
-        \\  Size of this header:
-        \\  Size of program headers:
-        \\  Number of program headers:
-        \\  Size of section headers:
-        \\  Number of section headers:
-        \\  Section header string table index:
+        \\  Version:                           {s}
+        \\  OS/ABI:                            {s}
+        \\  ABI Version:                       {d}
+        \\  Type:                              {s}
+        \\  Machine:                           {s}
+        \\  Version:                           0x{x}
+        \\  Entry point address:               0x{x}
+        \\  Start of program headers:          {d} (bytes into file)
+        \\  Start of section headers:          {d} (bytes into file)
+        \\  Flags:                             0x{x}
+        \\  Size of this header:               {d} (bytes)
+        \\  Size of program headers:           {d} (bytes)
+        \\  Number of program headers:         {d}
+        \\  Size of section headers:           {d} (bytes)
+        \\  Number of section headers:         {d}
+        \\  Section header string table index: {d}
         \\
     , .{
-        eb[0],
-        eb[1],
-        eb[2],
-        eb[3],
-        eb[4],
-        eb[5],
-        eb[6],
-        eb[7],
-        eb[8],
-        eb[9],
-        eb[10],
-        eb[11],
-        eb[12],
-        eb[13],
-        eb[14],
-        eb[15],
         class,
         data,
+        version,
+        os_abi,
+        elf.e_ident.ei_abiversion,
+        file_type,
+        machine,
+        @intFromEnum(elf.e_version),
+        elf.e_entry,
+        elf.e_phoff,
+        elf.e_shoff,
+        elf.e_flags,
+        elf.e_ehsize,
+        elf.e_phentsize,
+        elf.e_phnum,
+        elf.e_shentsize,
+        elf.e_shnum,
+        elf.e_shstrndx,
     });
 }
 

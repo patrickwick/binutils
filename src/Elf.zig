@@ -30,6 +30,17 @@ pub const EIdent = struct {
     ei_version: Version,
     ei_osabi: std.elf.OSABI,
     ei_abiversion: AbiVersion,
+
+    pub fn toBuffer(self: *const @This()) [std.elf.EI_NIDENT]u8 {
+        const e_ident_buffer = std.elf.MAGIC // EI_MAG0-3
+        ++ [_]u8{@intFromEnum(self.ei_class)} // EI_CLASS
+        ++ [_]u8{@intFromEnum(self.ei_data)} // EI_DATA
+        ++ [_]u8{@intFromEnum(self.ei_version)} // EI_VERSION
+        ++ [_]u8{@intFromEnum(self.ei_osabi)} // EI_OSABI
+        ++ [_]u8{self.ei_abiversion} // EI_ABIVERSION
+        ++ [_]u8{0} ** 7; // EI_PAD
+        return e_ident_buffer.*;
+    }
 };
 
 comptime {
@@ -110,18 +121,8 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     const writer = target.writer();
     const out_stream = target.seekableStream();
 
-    // NOTE: e_ident fields are single bytes therefore no endianess conversion is required
-    const e_ident =
-        std.elf.MAGIC // EI_MAG0-3
-    ++ [_]u8{@intFromEnum(self.e_ident.ei_class)} // EI_CLASS
-    ++ [_]u8{@intFromEnum(self.e_ident.ei_data)} // EI_DATA
-    ++ [_]u8{@intFromEnum(self.e_ident.ei_version)} // EI_VERSION
-    ++ [_]u8{@intFromEnum(self.e_ident.ei_osabi)} // EI_OSABI
-    ++ [_]u8{self.e_ident.ei_abiversion} // EI_ABIVERSION
-    ++ [_]u8{0} ** 7; // EI_PAD
-
     var header = std.elf.Ehdr{
-        .e_ident = e_ident.*,
+        .e_ident = self.e_ident.toBuffer(),
         .e_type = self.e_type,
         .e_machine = self.e_machine,
         .e_version = @intFromEnum(Version.ev_current),
@@ -386,7 +387,7 @@ fn createTestElfBuffer() ![256]u8 {
 
     const header = std.elf.Ehdr{
         .e_ident = e_ident.*,
-        .e_type = std.elf.ET.EXEC,
+        .e_type = std.elf.ET.DYN,
         .e_machine = std.elf.EM.X86_64,
         .e_version = @intFromEnum(Version.ev_current),
         .e_entry = 0,

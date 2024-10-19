@@ -10,7 +10,7 @@ Zig objcopy currently has strict limitations:
 * target endianness must match native endianness
 * no section or program header can be relocated, meaning:
     * shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)
-    * changing section alignment may corrupt headers that are not relocated by shifting sections contents into the header offset due to an increase alignment
+    * changing section alignment may corrupt headers that are not relocated by shifting sections contents into the header offset due to increased alignment
     * sections cannot be resized
     * sections cannot be reordered
 * testing is difficult due to scattered use of the file system and nested code

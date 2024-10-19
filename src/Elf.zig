@@ -108,12 +108,6 @@ pub fn removeSection(self: *@This()) void {
     _ = self;
 }
 
-pub fn writeToFile(self: *@This(), path: []const u8) !void {
-    var file = try std.fs.cwd().createFile(path, .{});
-    defer file.close();
-    try self.write(file);
-}
-
 pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, target: anytype) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "writer"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "seekableStream"));
@@ -152,6 +146,12 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     try out_stream.seekTo(self.e_shoff);
     for (self.sections.items) |section| {
         try writer.writeStruct(section.toShdr(output_endianness));
+    }
+
+    // program headers
+    try out_stream.seekTo(self.e_phoff);
+    for (self.program_segments.items) |program_segment| {
+        try writer.writeStruct(program_segment.program_header);
     }
 
     // section content
@@ -262,11 +262,11 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
 
     // TODO: section to segment mapping
     // => represent it via handles, not file offsets to have stability again section relocation
-    const program_segments = ProgramSegments.init(allocator);
+    var program_segments = ProgramSegments.init(allocator);
     errdefer program_segments.deinit();
     var program_it = header.program_header_iterator(source);
-    while (try program_it.next()) |program| {
-        _ = program;
+    while (try program_it.next()) |program_header| {
+        try program_segments.append(.{ .program_header = program_header });
     }
 
     return .{

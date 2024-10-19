@@ -1,10 +1,12 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
+const testing = @import("testing.zig");
 const readelf = @import("readelf.zig");
 const objdump = @import("objdump.zig");
 const objcopy = @import("objcopy.zig");
 
-const FATAL_ERROR = 1;
+const FATAL_EXIT_CODE = 1;
 
 pub fn main() !void {
     const std_out = std.io.getStdOut().writer().any();
@@ -66,6 +68,9 @@ fn parseReadelf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
     _ = out;
     if (args.len < 1) fatal("expected input file path", .{});
 
+    // TODO: parse options
+    // TODO: error on additional arguments
+
     return .{
         .file_path = args[0],
     };
@@ -83,72 +88,33 @@ fn parseObjcopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
     return .{};
 }
 
-pub fn fatal(comptime format: []const u8, args: anytype) noreturn {
-    std.log.err(format, args);
-    std.process.exit(FATAL_ERROR);
+fn fatal(comptime format: []const u8, args: anytype) noreturn {
+    if (!builtin.is_test) std.log.err(format, args);
+    std.process.exit(FATAL_EXIT_CODE);
 }
 
-pub fn fatalPrintUsage(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
-    std.log.err(format, args);
+fn fatalPrintUsage(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
+    if (!builtin.is_test) std.log.err(format, args);
     printUsage(out);
-    std.process.exit(FATAL_ERROR);
+    std.process.exit(FATAL_EXIT_CODE);
 }
 
 const t = std.testing;
 
-/// Expect the function to cause the process to exit with a non-zero exit code.
-fn expectExit(comptime expected_exit_code: u32, function: anytype) !void {
-    if (@import("builtin").os.tag != .linux) {
-        std.log.info("expectExit is only executed on linux", .{});
-        return;
-    }
-    if (expected_exit_code == 0) @compileError("Only non-zero exit codes are supported");
-
-    // fork the process: child executes the function, parent waits for the exit code
-    const child_pid = try std.posix.fork();
-    if (child_pid == 0) {
-        // child
-        function() catch {};
-        std.process.exit(0);
-    }
-
-    // parent
-    const has_not_changed = 0;
-    var status: u32 = 0;
-    while (std.os.linux.waitpid(child_pid, &status, 0) == has_not_changed or !std.os.linux.W.IFEXITED(status)) {}
-    const exit_code = std.os.linux.W.EXITSTATUS(status);
-    if (exit_code != expected_exit_code) {
-        t.expectEqual(expected_exit_code, exit_code) catch |err| {
-            std.log.err("Function did not exit with the expected error code", .{});
-
-            const max_frames = 20;
-            var addresses: [max_frames]usize = [1]usize{0} ** max_frames;
-            var stack_trace = std.builtin.StackTrace{
-                .instruction_addresses = &addresses,
-                .index = 0,
-            };
-            std.debug.captureStackTrace(@returnAddress(), &stack_trace);
-            std.debug.dumpStackTrace(stack_trace);
-
-            return err;
-        };
-    }
-}
-
 test parseCommand {
-    try expectExit(FATAL_ERROR, struct {
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             _ = parseCommand(std.io.null_writer.any(), &.{});
         }
     }.F);
 
-    try expectExit(FATAL_ERROR, struct {
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             _ = parseCommand(std.io.null_writer.any(), &.{""});
         }
     }.F);
 
-    try expectExit(FATAL_ERROR, struct {
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             _ = parseCommand(std.io.null_writer.any(), &.{"discombobulate"});
         }

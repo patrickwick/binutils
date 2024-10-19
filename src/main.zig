@@ -58,13 +58,13 @@ const Command = union(enum) {
 fn parseCommand(out: std.io.AnyWriter, args: []const []const u8) Command {
     if (args.len < 1) fatalPrintUsage(out, "command argument required", .{});
     const command = args[0];
-    if (std.mem.eql(u8, command, "readelf")) return Command{ .readelf = parseReadelf(out, args[1..]) };
-    if (std.mem.eql(u8, command, "objdump")) return Command{ .objdump = parseObjdump(out, args[1..]) };
-    if (std.mem.eql(u8, command, "objcopy")) return Command{ .objcopy = parseObjcopy(out, args[1..]) };
+    if (std.mem.eql(u8, command, "readelf")) return Command{ .readelf = parseReadElf(out, args[1..]) };
+    if (std.mem.eql(u8, command, "objdump")) return Command{ .objdump = parseObjDump(out, args[1..]) };
+    if (std.mem.eql(u8, command, "objcopy")) return Command{ .objcopy = parseObjCopy(out, args[1..]) };
     fatalPrintUsage(out, "unrecognized command: '{s}'", .{args[0]});
 }
 
-fn parseReadelf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElfOptions {
+fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElfOptions {
     var file_path: ?[]const u8 = null;
     var file_header = false;
     var section_headers = false;
@@ -131,16 +131,58 @@ fn parseReadelf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
     };
 }
 
-fn parseObjdump(out: std.io.AnyWriter, args: []const []const u8) objdump.ObjDumpOptions {
+fn parseObjDump(out: std.io.AnyWriter, args: []const []const u8) objdump.ObjDumpOptions {
     _ = out;
     _ = args;
     return .{};
 }
 
-fn parseObjcopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopyOptions {
-    _ = out;
-    _ = args;
-    return .{};
+fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopyOptions {
+    var in_file_path: ?[]const u8 = null;
+    var out_file_path: ?[]const u8 = null;
+
+    for (args) |arg| {
+        if (arg.len == 0) continue;
+        if (arg[0] == '-') {
+            if (arg.len > 1 and arg[1] == '-') {
+                // TODO: --help => print usage and exit
+            } else {
+                // single dash args allow 0 to n options
+                for (arg[1..]) |c| {
+                    switch (c) {
+                        else => fatalPrintUsageObjCopy(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
+                    }
+                }
+                continue;
+            }
+        } else {
+            if (in_file_path == null) {
+                in_file_path = arg;
+                continue;
+            }
+
+            if (out_file_path == null) {
+                out_file_path = arg;
+                continue;
+            }
+
+            fatalPrintUsageObjCopy(out, "expecting two positional arguments, got '{s}', '{s}' and additional '{s}'", .{
+                in_file_path.?,
+                out_file_path.?,
+                arg,
+            });
+        }
+
+        fatalPrintUsageObjCopy(out, "unrecognized argument '{s}'", .{arg});
+    }
+
+    if (in_file_path == null) fatalPrintUsageObjCopy(out, "two positional argument required, got none", .{});
+    if (out_file_path == null) fatalPrintUsageObjCopy(out, "two positional argument required, got one: '{s}'", .{in_file_path.?});
+
+    return .{
+        .in_file_path = in_file_path.?,
+        .out_file_path = out_file_path.?,
+    };
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
@@ -184,6 +226,25 @@ fn fatalPrintUsageReadElf(out: std.io.AnyWriter, comptime format: []const u8, ar
     std.process.exit(FATAL_EXIT_CODE);
 }
 
+fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
+    const usage =
+        \\Usage: binutils objcopy [options] in-file out-file
+        \\
+        \\Options:
+        \\
+        \\General Options:
+        \\
+        \\  -h, --help
+        \\      Print command-specific usage
+        \\
+    ;
+
+    const context = "binutils";
+    if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
+    out.writeAll(usage) catch @panic("failed printing usage");
+    std.process.exit(FATAL_EXIT_CODE);
+}
+
 const t = std.testing;
 
 test parseCommand {
@@ -211,43 +272,43 @@ test parseCommand {
     try t.expect(std.meta.activeTag(parseCommand(writer, &.{ "objcopy", "/home/abc/input", "./output" })) == .objcopy);
 }
 
-test parseReadelf {
+test parseReadElf {
     const writer = std.io.null_writer.any();
 
     // positional argument
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file" },
-        parseReadelf(writer, &.{"./file"}),
+        parseReadElf(writer, &.{"./file"}),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadelf(writer, &.{ "--file-header", "./file" }),
+        parseReadElf(writer, &.{ "--file-header", "./file" }),
     );
 
     // double dash options
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadelf(writer, &.{ "./file", "--file-header" }),
+        parseReadElf(writer, &.{ "./file", "--file-header" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadelf(writer, &.{ "./file", "--file-header", "--file-header" }),
+        parseReadElf(writer, &.{ "./file", "--file-header", "--file-header" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .section_headers = true },
-        parseReadelf(writer, &.{ "./file", "--section-headers" }),
+        parseReadElf(writer, &.{ "./file", "--section-headers" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .section_headers = true },
-        parseReadelf(writer, &.{ "./file", "--sections" }),
+        parseReadElf(writer, &.{ "./file", "--sections" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .program_headers = true },
-        parseReadelf(writer, &.{ "./file", "--program-headers" }),
+        parseReadElf(writer, &.{ "./file", "--program-headers" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .program_headers = true },
-        parseReadelf(writer, &.{ "./file", "--segments" }),
+        parseReadElf(writer, &.{ "./file", "--segments" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{
@@ -256,7 +317,7 @@ test parseReadelf {
             .section_headers = true,
             .program_headers = true,
         },
-        parseReadelf(writer, &.{ "./file", "--file-header", "--section-headers", "--program-headers" }),
+        parseReadElf(writer, &.{ "./file", "--file-header", "--section-headers", "--program-headers" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{
@@ -265,41 +326,41 @@ test parseReadelf {
             .section_headers = true,
             .program_headers = true,
         },
-        parseReadelf(writer, &.{ "./file", "--file-header", "--section-headers", "--sections", "--program-headers", "--segments" }),
+        parseReadElf(writer, &.{ "./file", "--file-header", "--section-headers", "--sections", "--program-headers", "--segments" }),
     );
 
     // single dash options
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadelf(writer, &.{ "./file", "-h" }),
+        parseReadElf(writer, &.{ "./file", "-h" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .section_headers = true },
-        parseReadelf(writer, &.{ "./file", "-S" }),
+        parseReadElf(writer, &.{ "./file", "-S" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .program_headers = true },
-        parseReadelf(writer, &.{ "./file", "-l" }),
+        parseReadElf(writer, &.{ "./file", "-l" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true, .section_headers = true, .program_headers = true },
-        parseReadelf(writer, &.{ "./file", "-Shl" }),
+        parseReadElf(writer, &.{ "./file", "-Shl" }),
     );
 
     // multiple single dash options
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true, .section_headers = true, .program_headers = true },
-        parseReadelf(writer, &.{ "./file", "-S", "-h", "-l" }),
+        parseReadElf(writer, &.{ "./file", "-S", "-h", "-l" }),
     );
 
     // dashes without flags
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file" },
-        parseReadelf(writer, &.{ "./file", "-" }),
+        parseReadElf(writer, &.{ "./file", "-" }),
     );
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadelf(writer, &.{ "./file", "-", "-h" }),
+        parseReadElf(writer, &.{ "./file", "-", "-h" }),
     );
 }
 
@@ -307,28 +368,68 @@ test "parseReadElf fatal errors" {
     try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             // double positional argument is not supported
-            _ = parseReadelf(std.io.null_writer.any(), &.{ "a", "b" });
+            _ = parseReadElf(std.io.null_writer.any(), &.{ "a", "b" });
         }
     }.F);
 
     try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             // no positional argument
-            _ = parseReadelf(std.io.null_writer.any(), &.{});
+            _ = parseReadElf(std.io.null_writer.any(), &.{});
         }
     }.F);
 
     try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             // no positional argument
-            _ = parseReadelf(std.io.null_writer.any(), &.{"--file-header"});
+            _ = parseReadElf(std.io.null_writer.any(), &.{"--file-header"});
         }
     }.F);
 
     try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             // unrecognized option
-            _ = parseReadelf(std.io.null_writer.any(), &.{ "./file", "--do-stuff" });
+            _ = parseReadElf(std.io.null_writer.any(), &.{ "./file", "--do-stuff" });
+        }
+    }.F);
+}
+
+test parseObjCopy {
+    const writer = std.io.null_writer.any();
+
+    // positional argument
+    try t.expectEqualDeep(
+        objcopy.ObjCopyOptions{ .in_file_path = "./in", .out_file_path = "./out" },
+        parseObjCopy(writer, &.{ "./in", "./out" }),
+    );
+}
+
+test "parseObjCopy fatal errors" {
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
+        fn F() !void {
+            // requires two positional arguments
+            _ = parseObjCopy(std.io.null_writer.any(), &.{"a"});
+        }
+    }.F);
+
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
+        fn F() !void {
+            // no positional argument
+            _ = parseObjCopy(std.io.null_writer.any(), &.{});
+        }
+    }.F);
+
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
+        fn F() !void {
+            // unrecognized option
+            _ = parseObjCopy(std.io.null_writer.any(), &.{ "./in", "./out", "--do-stuff" });
+        }
+    }.F);
+
+    try testing.expectExit(FATAL_EXIT_CODE, struct {
+        fn F() !void {
+            // unrecognized option
+            _ = parseObjCopy(std.io.null_writer.any(), &.{ "./in", "./out", "-Ö" });
         }
     }.F);
 }

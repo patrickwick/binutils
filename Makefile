@@ -20,3 +20,7 @@ readelf: ./reproduction/ls
 .PHONY: readelf-args
 readelf-args: ./reproduction/ls
 	zig build run -- readelf --file-header ./reproduction/ls --file-header --sections -Sh
+
+.PHONY: objcopy
+objcopy: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out

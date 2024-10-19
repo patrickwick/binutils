@@ -32,7 +32,7 @@ pub fn main() !void {
 
 fn printUsage(out: std.io.AnyWriter) void {
     const usage =
-        \\Usage: binutil command [options]
+        \\Usage: binutils command [options]
         \\
         \\Commands:
         \\

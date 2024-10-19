@@ -1,4 +1,4 @@
-# Convencience targets for temporary tests that are not meant to be part of build.zig
+# Convenience targets for temporary tests that are not meant to be part of build.zig
 all: test
 
 .PHONY: watch

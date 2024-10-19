@@ -17,3 +17,6 @@ test:
 readelf: ./reproduction/ls
 	zig build run -- readelf ./reproduction/ls
 
+.PHONY: readelf-args
+readelf-args: ./reproduction/ls
+	zig build run -- readelf --file-header ./reproduction/ls --file-header --sections -Sh

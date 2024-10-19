@@ -7,6 +7,9 @@ const FATAL_EXIT_CODE = 1;
 
 pub const ReadElfOptions = struct {
     file_path: []const u8,
+    file_header: bool = false,
+    section_headers: bool = false,
+    program_headers: bool = false,
 };
 
 pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
@@ -18,10 +21,9 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
     var elf = Elf.read(allocator, file) catch |err| fatal("failed reading ELF file '{s}': {s}", .{ options.file_path, @errorName(err) });
     defer elf.deinit();
 
-    // TODO: add -h / --file-header option
-    // if (options.header) printElfHeader();
-
-    printElfHeader(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
+    if (options.file_header) printElfHeader(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
+    if (options.section_headers) printElfSectionHeaders(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
+    if (options.program_headers) printElfProgramHeaders(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
 }
 
 fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
@@ -106,6 +108,18 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
         elf.e_shnum,
         elf.e_shstrndx,
     });
+}
+
+fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
+    // TODO: NYI
+    _ = out;
+    _ = elf;
+}
+
+fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
+    // TODO: NYI
+    _ = out;
+    _ = elf;
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {

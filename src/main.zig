@@ -24,9 +24,9 @@ pub fn main() !void {
 
     const command = parseCommand(std_out, args);
     switch (command) {
-        .readelf => |options| readelf.readelf(options),
-        .objdump => |options| objdump.objdump(options),
-        .objcopy => |options| objcopy.objcopy(options),
+        .readelf => |options| readelf.readelf(gpa, options),
+        .objdump => |options| objdump.objdump(gpa, options),
+        .objcopy => |options| objcopy.objcopy(gpa, options),
     }
 }
 

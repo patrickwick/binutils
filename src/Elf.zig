@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// Stores ELF information in native endianess and provides helpers for modifications and converting the file back to target endianness.
 pub const Elf = @This();
@@ -67,6 +68,10 @@ e_shnum: usize,
 // Section header name string table section index
 e_shstrndx: usize,
 
+pub fn deinit(self: *@This()) void {
+    _ = self;
+}
+
 pub fn addSection(self: *@This()) void {
     // TODO: NYI
     _ = self;
@@ -77,24 +82,53 @@ pub fn removeSection(self: *@This()) void {
     _ = self;
 }
 
-pub fn writeToFile(self: *@This(), path: []const u8) void {
-    // TODO: NYI
-    // TODO: convert endianness if target and native endianness does not match
-    _ = self;
-    _ = path;
+pub fn writeToFile(self: *@This(), path: []const u8) !void {
+    var file = try std.fs.cwd().createFile(path, .{});
+    defer file.close();
+    try self.write(file.writer().any());
 }
 
-pub fn deinit(self: *@This()) void {
-    _ = self;
+pub fn write(self: *@This(), writer: std.io.AnyWriter) !void {
+    // NOTE: e_ident fields are single bytes therefore no endianess conversion is required
+    const e_ident =
+        std.elf.MAGIC // EI_MAG0-3
+    ++ [_]u8{@intFromEnum(self.e_ident.ei_class)} // EI_CLASS
+    ++ [_]u8{@intFromEnum(self.e_ident.ei_data)} // EI_DATA
+    ++ [_]u8{@intFromEnum(self.e_ident.ei_version)} // EI_VERSION
+    ++ [_]u8{@intFromEnum(self.e_ident.ei_osabi)} // EI_OSABI
+    ++ [_]u8{self.e_ident.ei_abiversion} // EI_ABIVERSION
+    ++ [_]u8{0} ** 7; // EI_PAD
+
+    var header = std.elf.Ehdr{
+        .e_ident = e_ident.*,
+        .e_type = self.e_type,
+        .e_machine = self.e_machine,
+        .e_version = @intFromEnum(Version.ev_current),
+        .e_entry = @intCast(self.e_entry),
+        .e_phoff = @intCast(self.e_phoff),
+        .e_shoff = @intCast(self.e_shoff),
+        .e_flags = @intCast(self.e_flags),
+        .e_ehsize = @intCast(self.e_ehsize),
+        .e_phentsize = @intCast(self.e_phentsize),
+        .e_phnum = @intCast(self.e_phnum),
+        .e_shentsize = @intCast(self.e_shentsize),
+        .e_shnum = @intCast(self.e_shnum),
+        .e_shstrndx = @intCast(self.e_shstrndx),
+    };
+
+    // convert endianness if target and native endianness do not match
+    if (self.e_ident.ei_data != builtin.target.cpu.arch.endian()) std.mem.byteSwapAllFields(std.elf.Ehdr, &header);
+
+    try writer.writeStruct(header);
 }
 
 pub fn readFromFile(path: []const u8) !@This() {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
-    return try readFromSource(file);
+    return try read(file);
 }
 
-pub fn readFromSource(allocator: std.mem.Allocator, source: anytype) !@This() {
+pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
 
@@ -141,14 +175,62 @@ pub fn readFromSource(allocator: std.mem.Allocator, source: anytype) !@This() {
 
 const t = std.testing;
 
-test readFromSource {
+test read {
+    const allocator = t.allocator;
+
+    {
+        var in_buffer = try createTestElfBuffer();
+        var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+        var elf = try read(allocator, &in_buffer_stream);
+        defer elf.deinit();
+    }
+
+    {
+        var empty_buffer = [0]u8{};
+        var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &empty_buffer, .pos = 0 };
+        try t.expectError(error.TruncatedElf, read(allocator, &in_buffer_stream));
+    }
+}
+
+test "read endianness conversion" {
+    if (builtin.cpu.arch.endian() != .little) {
+        std.log.warn("endianness conversion test only runs on little endian targets", .{});
+        return;
+    }
+
+    // TODO: input endianness does not match native endianness
+}
+
+test write {
+    // TODO
+}
+
+test "write endianness conversion" {
+    if (builtin.cpu.arch.endian() != .little) {
+        std.log.warn("endianness conversion test only runs on little endian targets", .{});
+        return;
+    }
+
+    // TODO: target endianness does not match native endianness
+}
+
+// Roundtrip test:
+// * read from buffer
+// * write to buffer
+// * compare if the written bytes equal the input buffer
+test "Read and write roundtrip" {
     const allocator = t.allocator;
 
     var in_buffer = try createTestElfBuffer();
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
-
-    var elf = try readFromSource(allocator, &in_buffer_stream);
+    var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
+
+    var out_buffer = [_]u8{0} ** in_buffer.len;
+    var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
+    try elf.write(out_buffer_stream.writer().any());
+
+    try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
 }
 
 // Minimal ELF file in a buffer as a basis for tests
@@ -166,7 +248,7 @@ fn createTestElfBuffer() ![256]u8 {
     ++ [_]u8{0} // EI_ABIVERSION
     ++ [_]u8{0} ** 7; // EI_PAD
 
-    const elf_header = std.elf.Ehdr{
+    const header = std.elf.Ehdr{
         .e_ident = e_ident.*,
         .e_type = std.elf.ET.EXEC,
         .e_machine = std.elf.EM.X86_64,
@@ -190,7 +272,7 @@ fn createTestElfBuffer() ![256]u8 {
 
     // write input ELF
     {
-        try in_buffer_writer.writeStruct(elf_header);
+        try in_buffer_writer.writeStruct(header);
 
         // section headers
         try t.expectEqual(section_header_table_offset, try in_buffer_stream.getPos());

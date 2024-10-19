@@ -1,9 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// Expect the function to cause the process to exit with a non-zero exit code.
 pub fn expectExit(comptime expected_exit_code: u32, function: anytype) !void {
-    if (@import("builtin").os.tag != .linux) {
-        std.log.info("expectExit is only executed on linux", .{});
+    if (builtin.os.tag != .linux) {
+        std.log.warn("expectExit is only executed on linux", .{});
         return;
     }
     if (expected_exit_code == 0) @compileError("Only non-zero exit codes are supported");
@@ -37,4 +38,15 @@ pub fn expectExit(comptime expected_exit_code: u32, function: anytype) !void {
             return err;
         };
     }
+}
+
+const t = std.testing;
+
+test expectExit {
+    const exit_code = 1;
+    try expectExit(exit_code, struct {
+        fn F() !void {
+            std.process.exit(exit_code);
+        }
+    }.F);
 }

@@ -89,12 +89,14 @@ fn parseObjcopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
-    if (!builtin.is_test) std.log.err(format, args);
+    const context = "binutils";
+    if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
     std.process.exit(FATAL_EXIT_CODE);
 }
 
 fn fatalPrintUsage(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
-    if (!builtin.is_test) std.log.err(format, args);
+    const context = "binutils";
+    if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
     printUsage(out);
     std.process.exit(FATAL_EXIT_CODE);
 }

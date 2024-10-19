@@ -1,6 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const Section = @import("Section.zig").Section;
+const ProgramSegment = @import("ProgramSegment.zig").ProgramSegment;
+
+const FATAL_EXIT_CODE = 1;
+
 /// Stores ELF information in native endianess and provides helpers for modifications and converting the file back to target endianness.
 pub const Elf = @This();
 
@@ -30,6 +35,9 @@ pub const EIdent = struct {
 comptime {
     // TODO: verify that each field is a byte in size => important if source endianess does not match native endianness
 }
+
+pub const Sections = std.ArrayList(Section);
+pub const ProgramSegments = std.ArrayList(ProgramSegment);
 
 e_ident: EIdent,
 
@@ -68,8 +76,15 @@ e_shnum: usize,
 // Section header name string table section index
 e_shstrndx: usize,
 
+sections: Sections,
+program_segments: ProgramSegments,
+
+allocator: std.mem.Allocator,
+
 pub fn deinit(self: *@This()) void {
-    _ = self;
+    for (self.sections.items) |section| self.allocator.free(section.name);
+    self.sections.deinit();
+    self.program_segments.deinit();
 }
 
 pub fn addSection(self: *@This()) void {
@@ -85,10 +100,16 @@ pub fn removeSection(self: *@This()) void {
 pub fn writeToFile(self: *@This(), path: []const u8) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
-    try self.write(file.writer().any());
+    try self.write(file);
 }
 
-pub fn write(self: *@This(), writer: std.io.AnyWriter) !void {
+pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, target: anytype) !void {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "writer"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "seekableStream"));
+
+    const writer = target.writer();
+    const out_stream = target.seekableStream();
+
     // NOTE: e_ident fields are single bytes therefore no endianess conversion is required
     const e_ident =
         std.elf.MAGIC // EI_MAG0-3
@@ -116,10 +137,48 @@ pub fn write(self: *@This(), writer: std.io.AnyWriter) !void {
         .e_shstrndx = @intCast(self.e_shstrndx),
     };
 
-    // convert endianness if target and native endianness do not match
-    if (self.e_ident.ei_data != builtin.target.cpu.arch.endian()) std.mem.byteSwapAllFields(std.elf.Ehdr, &header);
+    const output_endianness = self.e_ident.ei_data;
 
+    // convert endianness if output and native endianness do not match
+    if (output_endianness != builtin.target.cpu.arch.endian()) std.mem.byteSwapAllFields(std.elf.Ehdr, &header);
+
+    try out_stream.seekTo(0);
     try writer.writeStruct(header);
+
+    // TODO: perform validation that header, section header, program headers and section content regions don't overlap
+
+    // section headers
+    try out_stream.seekTo(self.e_shoff);
+    for (self.sections.items) |section| {
+        try writer.writeStruct(section.toShdr(output_endianness));
+    }
+
+    // section content
+    for (self.sections.items) |section| {
+        switch (section.content) {
+            .data => |data| {
+                try out_stream.seekTo(section.header.sh_offset);
+                try writer.writeAll(data);
+            },
+            .no_bits => {},
+            .input_file_range => |range| {
+                const data = section.readContentAlloc(source, allocator) catch |err| {
+                    std.log.err("failed reading '{s}' section content at 0x{x} of size 0x{x} ({d}): {}", .{
+                        section.name,
+                        range.offset,
+                        range.size,
+                        range.size,
+                        err,
+                    });
+                    return err;
+                };
+                defer allocator.free(data);
+
+                try out_stream.seekTo(section.header.sh_offset);
+                try writer.writeAll(data);
+            },
+        }
+    }
 }
 
 pub fn readFromFile(path: []const u8) !@This() {
@@ -144,10 +203,70 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
 
     const header = try std.elf.Header.read(source);
 
-    _ = allocator;
-    // TODO: sections
-    // TODO: program headers
+    const string_table_section = shstrtab: {
+        // NOTE: iterator already accounts for endianess, so it always has native endianness
+        var section_it = header.section_header_iterator(source);
+        var i: usize = 0;
+        while (try section_it.next()) |section| : (i += 1) {
+            if (i == header.shstrndx) {
+                if (!isStringTable(section)) fatal(
+                    "section type of section name string table must be SHT_STRTAB 0x{x}, got 0x{x}",
+                    .{ std.elf.SHT_STRTAB, section.sh_type },
+                );
+
+                break :shstrtab Section{
+                    .name = ".shstrtab", // TODO: use name from shstrtab itself instead of hardcoding it
+                    .header = section,
+                    .content = .{ .input_file_range = .{ .offset = section.sh_offset, .size = section.sh_size } },
+                };
+            }
+        }
+        fatal("input ELF file does not contain a string table section (usually .shstrtab)", .{});
+    };
+    const string_table_content = try string_table_section.readContentAlloc(source, allocator);
+    defer allocator.free(string_table_content);
+
+    var sections = Sections.init(allocator);
+    errdefer sections.deinit();
+    {
+        var section_it = header.section_header_iterator(source);
+        while (try section_it.next()) |section| {
+            if (section.sh_name >= string_table_content.len)
+                fatal("invalid ELF input file: section name offset {d} exceeds strtab size {d}", .{ section.sh_name, string_table_content.len });
+
+            // TODO: extract function
+            // name is always copied, so the string table content can be free'd
+            const name_source = std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[section.sh_name])));
+            const name = try allocator.dupe(u8, name_source);
+
+            const content: Section.ContentSource = if (isSectionInFile(section)) .{
+                .input_file_range = .{
+                    .offset = section.sh_offset,
+                    .size = section.sh_size,
+                },
+            } else .{
+                .no_bits = .{
+                    .offset = section.sh_offset,
+                    .size = section.sh_size,
+                },
+            };
+
+            try sections.append(.{
+                .name = name,
+                .header = section,
+                .content = content,
+            });
+        }
+    }
+
     // TODO: section to segment mapping
+    // => represent it via handles, not file offsets to have stability again section relocation
+    const program_segments = ProgramSegments.init(allocator);
+    errdefer program_segments.deinit();
+    var program_it = header.program_header_iterator(source);
+    while (try program_it.next()) |program| {
+        _ = program;
+    }
 
     return .{
         .e_ident = .{
@@ -170,7 +289,24 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         .e_shentsize = @sizeOf(std.elf.Shdr),
         .e_shnum = header.shnum,
         .e_shstrndx = header.shstrndx,
+        .sections = sections,
+        .program_segments = program_segments,
+        .allocator = allocator,
     };
+}
+
+inline fn isStringTable(section_header: std.elf.Shdr) bool {
+    return section_header.sh_type == std.elf.SHT_STRTAB;
+}
+
+inline fn isSectionInFile(section_header: std.elf.Shdr) bool {
+    return section_header.sh_type != std.elf.SHT_NOBITS;
+}
+
+fn fatal(comptime format: []const u8, args: anytype) noreturn {
+    const context = "binutils";
+    if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
+    std.process.exit(FATAL_EXIT_CODE);
 }
 
 const t = std.testing;
@@ -228,7 +364,7 @@ test "Read and write roundtrip" {
 
     var out_buffer = [_]u8{0} ** in_buffer.len;
     var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
-    try elf.write(out_buffer_stream.writer().any());
+    try elf.write(allocator, &in_buffer_stream, &out_buffer_stream);
 
     try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
 }
@@ -255,7 +391,7 @@ fn createTestElfBuffer() ![256]u8 {
         .e_version = @intFromEnum(Version.ev_current),
         .e_entry = 0,
         .e_phoff = 0,
-        .e_shoff = 0,
+        .e_shoff = @sizeOf(std.elf.Ehdr),
         .e_flags = 0,
         .e_ehsize = @sizeOf(std.elf.Ehdr),
         .e_phentsize = @sizeOf(std.elf.Phdr),

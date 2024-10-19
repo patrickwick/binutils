@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const Elf = @import("Elf.zig");
 
 const FATAL_EXIT_CODE = 1;
@@ -16,6 +18,7 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
-    std.log.err(format, args);
+    const context = "binutils readelf";
+    if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
     std.process.exit(FATAL_EXIT_CODE);
 }

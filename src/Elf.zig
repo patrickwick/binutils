@@ -307,26 +307,39 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     var program_segments = ProgramSegments.init(allocator);
     errdefer program_segments.deinit();
     var program_it = header.program_header_iterator(source);
+    var segment_i: usize = 0;
     while (try program_it.next()) |program_header| {
+        defer segment_i += 1;
         var segment_mapping = ProgramSegment.SegmentMapping.init(allocator);
+        for (sections.items) |section| {
+            // NOBITS section like .bss are not contained in the file, so they're handled differently
+            if (section.header.sh_type == std.elf.SHT_NOBITS) {
+                const segment_start = program_header.p_vaddr;
+                const segment_end = segment_start + program_header.p_memsz;
+                const section_start = section.header.sh_addr;
+                const section_end = section_start + section.header.sh_size;
 
-        const start = program_header.p_offset;
-        const end = program_header.p_offset + program_header.p_filesz;
-        for (sections.items, 0..) |section, i| {
-            const section_start = section.header.sh_offset;
-            const section_end = section.header.sh_offset + section.header.sh_size;
+                if (segment_start <= section_start and segment_end >= section_end) {
+                    try segment_mapping.append(section.handle);
+                }
+            } else {
+                const segment_start = program_header.p_offset;
+                const segment_end = segment_start + program_header.p_filesz;
+                const section_start = section.header.sh_offset;
+                const section_end = section_start + section.header.sh_size;
 
-            // NOTE: limitation: rejects input if program header loads a subset of a section
-            // * start is between section start and end but end is not after section end
-            // * end is between section start and end but start is not before section start
-            if ((start >= section_start and start < section_end and end < section_end) //
-            or (end > section_start and end <= section_end and start > section_start)) fatal(
-                "segment {d} (0x{x}-0x{x}) is not allowed to map '{s}' section subset (0x{x}-0x{x}). Only entire sections can be mapped",
-                .{ i, start, end, section.name, section_start, section_end },
-            );
+                // NOTE: limitation: rejects input if program header loads a subset of a section
+                // * start is between section start and end but end is not after section end
+                // * end is between section start and end but start is not before section start
+                if ((segment_start >= section_start and segment_start < section_end and segment_end < section_end) //
+                or (segment_end > section_start and segment_end <= section_end and segment_start > section_start)) fatal(
+                    "segment {d} (0x{x}-0x{x}) is not allowed to map '{s}' section subset (0x{x}-0x{x}). Only entire sections can be mapped",
+                    .{ segment_i, segment_start, segment_end, section.name, section_start, section_end },
+                );
 
-            if (start <= section.header.sh_offset and end >= section.header.sh_offset + section.header.sh_size) {
-                try segment_mapping.append(section.handle);
+                if (segment_start <= section_start and segment_end >= section_end) {
+                    try segment_mapping.append(section.handle);
+                }
             }
         }
 

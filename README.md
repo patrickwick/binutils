@@ -15,6 +15,59 @@ Zig objcopy currently has strict limitations:
     * sections cannot be reordered
 * testing is difficult due to scattered use of the file system and nested code
 
+## Usage
+
+```
+Usage: binutils command [options]
+
+Commands:
+
+  readelf          Display information about ELF files
+  objdump          Display information from object files
+  objcopy          Copy and translate object files
+
+General Options:
+
+  -h, --help       Print command-specific usage
+```
+
+### Readelf Usage
+
+```
+Usage: binutils readelf [options] elf-file
+
+Options:
+
+  -h, --file-headers
+      Display file headers.
+
+  -S, --section-headers
+      Display section headers.
+
+  -l, --program-headers, segments
+      Display program headers.
+
+General Options:
+
+  --help
+      Print command-specific usage
+
+```
+
+### Objcopy Usage
+
+```
+Usage: binutils objcopy [options] in-file out-file
+
+Options:
+
+General Options:
+
+  -h, --help
+      Print command-specific usage
+
+```
+
 ## Limitations
 
 * rejects input if program header loads a subset of a section. It has to load the entire section or nothing at all.

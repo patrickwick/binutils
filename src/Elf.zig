@@ -50,6 +50,8 @@ comptime {
 pub const Sections = std.ArrayList(Section);
 pub const ProgramSegments = std.ArrayList(ProgramSegment);
 
+section_handle_counter: Section.Handle,
+
 e_ident: EIdent,
 
 e_type: std.elf.ET,
@@ -91,6 +93,42 @@ sections: Sections,
 program_segments: ProgramSegments,
 
 allocator: std.mem.Allocator,
+
+pub fn init(
+    allocator: std.mem.Allocator,
+    header: std.elf.Header,
+    ei_version: Version,
+    e_version: Version,
+    sections: Sections,
+    program_segments: ProgramSegments,
+) !@This() {
+    return .{
+        .section_handle_counter = sections.items.len + 1,
+        .e_ident = .{
+            .ei_class = if (header.is_64) .elfclass64 else .elfclass32,
+            .ei_data = header.endian,
+            .ei_version = ei_version,
+            .ei_osabi = header.os_abi,
+            .ei_abiversion = header.abi_version,
+        },
+        .e_type = header.type,
+        .e_machine = header.machine,
+        .e_version = e_version,
+        .e_entry = header.entry,
+        .e_phoff = header.phoff,
+        .e_shoff = header.shoff,
+        .e_flags = 0, // TODO: no non-zero flags supported
+        .e_ehsize = @sizeOf(std.elf.Ehdr),
+        .e_phentsize = @sizeOf(std.elf.Phdr),
+        .e_phnum = header.phnum,
+        .e_shentsize = @sizeOf(std.elf.Shdr),
+        .e_shnum = header.shnum,
+        .e_shstrndx = header.shstrndx,
+        .sections = sections,
+        .program_segments = program_segments,
+        .allocator = allocator,
+    };
+}
 
 pub fn deinit(self: *@This()) void {
     for (self.sections.items) |section| self.allocator.free(section.name);
@@ -204,6 +242,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
 
     const header = try std.elf.Header.read(source);
 
+    var section_handle_counter: Section.Handle = 1;
     const string_table_section = shstrtab: {
         // NOTE: iterator already accounts for endianess, so it always has native endianness
         var section_it = header.section_header_iterator(source);
@@ -215,7 +254,9 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                     .{ std.elf.SHT_STRTAB, section.sh_type },
                 );
 
+                defer section_handle_counter += 1;
                 break :shstrtab Section{
+                    .handle = section_handle_counter,
                     .name = ".shstrtab", // TODO: use name from shstrtab itself instead of hardcoding it
                     .header = section,
                     .content = .{ .input_file_range = .{ .offset = section.sh_offset, .size = section.sh_size } },
@@ -252,7 +293,9 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 },
             };
 
+            defer section_handle_counter += 1;
             try sections.append(.{
+                .handle = section_handle_counter,
                 .name = name,
                 .header = section,
                 .content = content,
@@ -260,40 +303,46 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         }
     }
 
-    // TODO: section to segment mapping
-    // => represent it via handles, not file offsets to have stability again section relocation
+    // section to segment mapping
     var program_segments = ProgramSegments.init(allocator);
     errdefer program_segments.deinit();
     var program_it = header.program_header_iterator(source);
     while (try program_it.next()) |program_header| {
-        try program_segments.append(.{ .program_header = program_header });
+        var segment_mapping = ProgramSegment.SegmentMapping.init(allocator);
+
+        const start = program_header.p_offset;
+        const end = program_header.p_offset + program_header.p_filesz;
+        for (sections.items, 0..) |section, i| {
+            const section_start = section.header.sh_offset;
+            const section_end = section.header.sh_offset + section.header.sh_size;
+
+            // NOTE: limitation: rejects input if program header loads a subset of a section
+            // * start is between section start and end but end is not after section end
+            // * end is between section start and end but start is not before section start
+            if ((start >= section_start and start < section_end and end < section_end) //
+            or (end > section_start and end <= section_end and start > section_start)) fatal(
+                "segment {d} (0x{x}-0x{x}) is not allowed to map '{s}' section subset (0x{x}-0x{x}). Only entire sections can be mapped",
+                .{ i, start, end, section.name, section_start, section_end },
+            );
+
+            if (start <= section.header.sh_offset and end >= section.header.sh_offset + section.header.sh_size) {
+                try segment_mapping.append(section.handle);
+            }
+        }
+
+        try program_segments.append(.{
+            .program_header = program_header,
+            .segment_mapping = segment_mapping,
+        });
     }
 
-    return .{
-        .e_ident = .{
-            .ei_class = if (header.is_64) .elfclass64 else .elfclass32,
-            .ei_data = header.endian,
-            .ei_version = ei_version,
-            .ei_osabi = header.os_abi,
-            .ei_abiversion = header.abi_version,
-        },
-        .e_type = header.type,
-        .e_machine = header.machine,
-        .e_version = e_version,
-        .e_entry = header.entry,
-        .e_phoff = header.phoff,
-        .e_shoff = header.shoff,
-        .e_flags = 0, // TODO: no non-zero flags supported
-        .e_ehsize = @sizeOf(std.elf.Ehdr),
-        .e_phentsize = @sizeOf(std.elf.Phdr),
-        .e_phnum = header.phnum,
-        .e_shentsize = @sizeOf(std.elf.Shdr),
-        .e_shnum = header.shnum,
-        .e_shstrndx = header.shstrndx,
-        .sections = sections,
-        .program_segments = program_segments,
-        .allocator = allocator,
-    };
+    return try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
+}
+
+pub fn getSection(self: *const @This(), handle: Section.Handle) ?Section {
+    return for (self.sections.items) |section| {
+        if (section.handle == handle) return section;
+    } else null;
 }
 
 inline fn isStringTable(section_header: std.elf.Shdr) bool {

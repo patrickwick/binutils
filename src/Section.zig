@@ -2,6 +2,8 @@ const std = @import("std");
 
 pub const Section = @This();
 
+pub const Handle = u64;
+
 // copy from the input file
 pub const InputFileRange = struct {
     offset: usize,
@@ -39,6 +41,9 @@ pub const ContentSource = union(enum) {
         };
     }
 };
+
+// unique handle to identify the section without comparing names
+handle: Handle,
 
 name: []const u8, // head allocated copy
 

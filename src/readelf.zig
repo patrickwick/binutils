@@ -49,6 +49,7 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
         else => |abi| @tagName(abi),
     };
 
+    // TODO: extract function
     const file_type = switch (elf.e_type) {
         .DYN => "DYN (Position-Independent Executable file)",
         // TODO: add all verbose names
@@ -63,6 +64,7 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
 
     // TODO: print leading zeroes in hex values for constant width and adapt test
     try out.print(
+        \\
         \\ELF Header:
         \\  Magic:   {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
         \\
@@ -112,6 +114,7 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
 
 fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
     try out.print(
+        \\
         \\There are {d} section headers, starting at offset 0x{x}
         \\
         \\
@@ -294,13 +297,111 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         \\  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
         \\  L (link order), O (extra OS processing required), G (group), T (TLS),
         \\  C (compressed), E (exclude), R (retain), l (large)
+        \\
     );
 }
 
 fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
-    // TODO: NYI
-    _ = out;
-    _ = elf;
+    // TODO: extract function
+    const file_type = switch (elf.e_type) {
+        .DYN => "DYN (Position-Independent Executable file)",
+        // TODO: add all verbose names
+        else => |file_type| @tagName(file_type),
+    };
+
+    try out.print(
+        \\
+        \\Elf file type is {s}
+        \\Entry point 0x{x}
+        \\There are {d} program headers, starting at offset {d}
+        \\
+        \\Program Headers:
+        \\Type             Offset   VirtAddr           PhysAddr           FileSiz  MemSiz
+        \\
+    , .{ file_type, elf.e_entry, elf.e_phnum, elf.e_phoff });
+
+    for (elf.program_segments.items) |program_segment| {
+        // TODO: extract function
+        const program_header_type = switch (program_segment.program_header.p_type) {
+            std.elf.PT_NULL => "NULL",
+            std.elf.PT_LOAD => "LOAD",
+            std.elf.PT_DYNAMIC => "DYNAMIC",
+            std.elf.PT_INTERP => "INTERP",
+            std.elf.PT_NOTE => "NOTE",
+            std.elf.PT_SHLIB => "SHLIB",
+            std.elf.PT_PHDR => "PHDR",
+            std.elf.PT_TLS => "TLS",
+            std.elf.PT_NUM => "NUM",
+            std.elf.PT_LOOS => "LOOS",
+            std.elf.PT_GNU_EH_FRAME => "GNU_EH_FRAME",
+            std.elf.PT_GNU_STACK => "GNU_STACK",
+            std.elf.PT_GNU_RELRO => "GNU_RELRO",
+            std.elf.PT_SUNWBSS => "SUNWBSS",
+            std.elf.PT_SUNWSTACK => "SUNWSTACK",
+            else => "UNKNOWN",
+        };
+
+        // TODO: extract function for fixed hex format
+        var offset_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_offset))[0..3]).*;
+        std.mem.reverse(u8, &offset_bytes);
+        const offset_hex = std.fmt.bytesToHex(offset_bytes, .lower);
+
+        var virtual_address_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_vaddr))[0..8]).*;
+        std.mem.reverse(u8, &virtual_address_bytes);
+        const virtual_address_hex = std.fmt.bytesToHex(virtual_address_bytes, .lower);
+
+        var physical_address_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_paddr))[0..8]).*;
+        std.mem.reverse(u8, &physical_address_bytes);
+        const physical_address_hex = std.fmt.bytesToHex(virtual_address_bytes, .lower);
+
+        var file_size_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_filesz))[0..3]).*;
+        std.mem.reverse(u8, &file_size_bytes);
+        const file_size_hex = std.fmt.bytesToHex(file_size_bytes, .lower);
+
+        var memory_size_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_memsz))[0..3]).*;
+        std.mem.reverse(u8, &memory_size_bytes);
+        const memory_size_hex = std.fmt.bytesToHex(memory_size_bytes, .lower);
+
+        try out.print("  {s}", .{program_header_type});
+        const indentation = 15;
+        try out.writeByteNTimes(' ', @max(indentation, program_header_type.len) - program_header_type.len);
+        try out.print(
+            "0x{s} 0x{s} 0x{s} 0x{s} 0x{s}",
+            .{ offset_hex, virtual_address_hex, physical_address_hex, file_size_hex, memory_size_hex },
+        );
+
+        // TODO: program interpreter
+        // if (program_segment.program_header.p_type == std.elf.PT_INTERP) {
+        //     try out.print(
+        //         \\
+        //         \\      [Requesting program interpreter: {s}]
+        //     , .{"TODO: NYI"});
+        // }
+        try out.writeByte('\n');
+    }
+
+    try out.writeAll(
+        \\
+        \\Section to Segment mapping:
+        \\  Segment Sections...
+        \\
+    );
+
+    for (elf.program_segments.items, 0..) |program_segment, i| {
+        try out.print("    {s}{d}    ", .{ if (i < 10) "0" else "", i });
+        for (program_segment.segment_mapping.items) |mapping| {
+            const section = elf.getSection(mapping) orelse fatal(
+                "corrupt section to segment mapping: segment {d} references non existing section handle {d}",
+                .{ i, mapping },
+            );
+            if (section.name.len > 0) try out.print("{s} ", .{section.name});
+        }
+        try out.writeByte('\n');
+    }
+
+    // TODO: sections not mapped
+    // try out.writeAll("    None  TODO: NYI");
+    // try out.writeByte('\n');
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
@@ -313,6 +414,7 @@ const t = std.testing;
 
 test printElfHeader {
     const expected =
+        \\
         \\ELF Header:
         \\  Magic:   7f 45 4c 46 2 1 1 0 0 0 0 0 0 0 0 0
         \\  Class:                             ELF64
@@ -336,10 +438,11 @@ test printElfHeader {
         \\
     ;
 
-    var out_buffer = [_]u8{0} ** expected.len;
+    var out_buffer = [_]u8{0} ** (expected.len * 2);
     var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
 
     const elf = .{
+        .section_handle_counter = 1,
         .e_ident = .{
             .ei_class = .elfclass64,
             .ei_data = .little,
@@ -366,5 +469,5 @@ test printElfHeader {
     };
     try printElfHeader(out_buffer_stream.writer().any(), &elf);
 
-    try t.expectEqualStrings(expected, &out_buffer);
+    try t.expectEqualStrings(expected, out_buffer[0..expected.len]);
 }

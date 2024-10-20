@@ -15,3 +15,7 @@ Zig objcopy currently has strict limitations:
     * sections cannot be reordered
 * testing is difficult due to scattered use of the file system and nested code
 
+## Limitations
+
+* rejects input if program header loads a subset of a section. It has to load the entire section or nothing at all.
+

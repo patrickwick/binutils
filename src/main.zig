@@ -140,12 +140,29 @@ fn parseObjDump(out: std.io.AnyWriter, args: []const []const u8) objdump.ObjDump
 fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopyOptions {
     var in_file_path: ?[]const u8 = null;
     var out_file_path: ?[]const u8 = null;
+    var add_section: ?objcopy.AddSectionOptions = null;
 
-    for (args) |arg| {
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
         if (arg.len == 0) continue;
         if (arg[0] == '-') {
             if (arg.len > 1 and arg[1] == '-') {
                 // TODO: --help => print usage and exit
+
+                if (std.mem.eql(u8, arg, "--add-section")) {
+                    if (args.len > i + 1) {
+                        defer i += 1;
+                        const opt = args[i + 1];
+                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                            out,
+                            "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
+                            .{ arg, opt },
+                        );
+                        add_section = .{ .section_name = split.first, .file_path = split.second };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting it to be followed by <name>=<flags>", .{arg});
+                    continue;
+                }
             } else {
                 // single dash args allow 0 to n options
                 for (arg[1..]) |c| {
@@ -182,6 +199,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
     return .{
         .in_file_path = in_file_path.?,
         .out_file_path = out_file_path.?,
+        .add_section = add_section,
     };
 }
 
@@ -232,6 +250,9 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
         \\
         \\Options:
         \\
+        \\  --add-section <name>=<file>
+        \\      Add file content from <file> with the a new section named <name>.
+        \\
         \\General Options:
         \\
         \\  -h, --help
@@ -245,7 +266,115 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
     std.process.exit(FATAL_EXIT_CODE);
 }
 
+const SectionFlags = packed struct {
+    alloc: bool = false,
+    contents: bool = false,
+    load: bool = false,
+    noload: bool = false,
+    readonly: bool = false,
+    code: bool = false,
+    data: bool = false,
+    rom: bool = false,
+    exclude: bool = false,
+    shared: bool = false,
+    debug: bool = false,
+    large: bool = false,
+    merge: bool = false,
+    strings: bool = false,
+};
+
+fn parseSectionFlags(comma_separated_flags: []const u8) SectionFlags {
+    const P = struct {
+        fn parse(flags: *SectionFlags, string: []const u8) void {
+            if (string.len == 0) return;
+
+            if (std.mem.eql(u8, string, "alloc")) {
+                flags.alloc = true;
+            } else if (std.mem.eql(u8, string, "contents")) {
+                flags.contents = true;
+            } else if (std.mem.eql(u8, string, "load")) {
+                flags.load = true;
+            } else if (std.mem.eql(u8, string, "noload")) {
+                flags.noload = true;
+            } else if (std.mem.eql(u8, string, "readonly")) {
+                flags.readonly = true;
+            } else if (std.mem.eql(u8, string, "code")) {
+                flags.code = true;
+            } else if (std.mem.eql(u8, string, "data")) {
+                flags.data = true;
+            } else if (std.mem.eql(u8, string, "rom")) {
+                flags.rom = true;
+            } else if (std.mem.eql(u8, string, "exclude")) {
+                flags.exclude = true;
+            } else if (std.mem.eql(u8, string, "shared")) {
+                flags.shared = true;
+            } else if (std.mem.eql(u8, string, "debug")) {
+                flags.debug = true;
+            } else if (std.mem.eql(u8, string, "large")) {
+                flags.large = true;
+            } else if (std.mem.eql(u8, string, "merge")) {
+                flags.merge = true;
+            } else if (std.mem.eql(u8, string, "strings")) {
+                flags.strings = true;
+            } else {
+                std.log.warn("Skipping unrecognized section flag '{s}'", .{string});
+            }
+        }
+    };
+
+    var flags = SectionFlags{};
+    var offset: usize = 0;
+    for (comma_separated_flags, 0..) |c, i| {
+        if (c == ',') {
+            defer offset = i + 1;
+            const string = comma_separated_flags[offset..i];
+            P.parse(&flags, string);
+        }
+    }
+    P.parse(&flags, comma_separated_flags[offset..]);
+    return flags;
+}
+
+const SplitResult = struct { first: []const u8, second: []const u8 };
+
+fn splitOption(option: []const u8) ?SplitResult {
+    const separator = '=';
+    if (option.len < 3) return null; // minimum "a=b"
+    for (1..option.len - 1) |i| {
+        if (option[i] == separator) return .{
+            .first = option[0..i],
+            .second = option[i + 1 ..],
+        };
+    }
+    return null;
+}
+
 const t = std.testing;
+
+test "Parse section flags" {
+    const F = SectionFlags;
+    try t.expectEqual(F{}, parseSectionFlags(""));
+    try t.expectEqual(F{}, parseSectionFlags(","));
+    try t.expectEqual(F{}, parseSectionFlags("abc"));
+    try t.expectEqual(F{ .alloc = true }, parseSectionFlags("alloc"));
+    try t.expectEqual(F{ .data = true }, parseSectionFlags("data,"));
+    try t.expectEqual(F{ .alloc = true, .code = true }, parseSectionFlags("alloc,code"));
+    try t.expectEqual(F{ .alloc = true, .code = true }, parseSectionFlags("alloc,code,not_supported"));
+}
+
+test splitOption {
+    {
+        const split = splitOption(".abc=123");
+        try t.expect(split != null);
+        try t.expectEqualStrings(".abc", split.?.first);
+        try t.expectEqualStrings("123", split.?.second);
+    }
+
+    try t.expectEqual(null, splitOption(""));
+    try t.expectEqual(null, splitOption("=abc"));
+    try t.expectEqual(null, splitOption("abc="));
+    try t.expectEqual(null, splitOption("abc"));
+}
 
 test parseCommand {
     try testing.expectExit(FATAL_EXIT_CODE, struct {
@@ -399,7 +528,7 @@ test parseObjCopy {
 
     // positional argument
     try t.expectEqualDeep(
-        objcopy.ObjCopyOptions{ .in_file_path = "./in", .out_file_path = "./out" },
+        objcopy.ObjCopyOptions{ .in_file_path = "./in", .out_file_path = "./out", .add_section = null },
         parseObjCopy(writer, &.{ "./in", "./out" }),
     );
 }

@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const testing = @import("testing.zig");
 const Section = @import("Section.zig").Section;
 const ProgramSegment = @import("ProgramSegment.zig").ProgramSegment;
 
@@ -131,14 +132,105 @@ pub fn init(
 }
 
 pub fn deinit(self: *@This()) void {
-    for (self.sections.items) |section| self.allocator.free(section.name);
+    for (self.sections.items) |section| {
+        self.allocator.free(section.name);
+        switch (section.content) {
+            .data_allocated => |data| self.allocator.free(data),
+            else => {},
+        }
+    }
     self.sections.deinit();
     self.program_segments.deinit();
 }
 
-pub fn addSection(self: *@This()) void {
-    // TODO: NYI
-    _ = self;
+pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
+    defer self.section_handle_counter += 1;
+    return self.section_handle_counter;
+}
+
+pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8) !usize {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
+
+    const shstrtab = &self.sections.items[self.e_shstrndx];
+    var name_index: usize = 0;
+    const copy = switch (shstrtab.content) {
+        .data => |data| copy: {
+            name_index = data.len;
+
+            const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
+            errdefer self.allocator.free(copy);
+            @memcpy(copy[0..data.len], data);
+
+            break :copy copy;
+        },
+        .data_allocated => |data| copy: {
+            name_index = data.len + 1;
+
+            const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
+            errdefer self.allocator.free(copy);
+            @memcpy(copy[0..data.len], data);
+            self.allocator.free(data);
+
+            break :copy copy;
+        },
+        .input_file_range => |range| data: {
+            name_index = range.size;
+
+            const copy = try self.allocator.alloc(u8, range.size + section_name.len + 1);
+            errdefer self.allocator.free(copy);
+
+            try source.seekableStream().seekTo(range.offset);
+            const bytes_read = try source.reader().readAll(copy[0..range.size]);
+            if (bytes_read != range.size) return error.TruncatedElf;
+
+            break :data copy;
+        },
+        .no_bits => fatal("unexpected NOBITS section name string table section", .{}),
+    };
+
+    std.debug.assert(name_index != 0);
+    std.debug.assert(copy.len > 0);
+    @memcpy(copy[name_index .. copy.len - 1], section_name);
+    copy[copy.len - 1] = 0;
+
+    // TODO: update content
+    // shstrtab.content = .{ .data_allocated = copy };
+
+    // relocate content after updated shstrtab section due to size increase
+    // TODO: relocate section headers and update sh_shoff
+
+    // TODO: relocate program headers and update sh_phoff
+
+    // TODO: relocate section content
+
+    // TODO: update program header offsets
+
+    return name_index;
+}
+
+pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, content: []const u8) !void {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
+
+    // TODO: decide on strategy: either update shstrtab, headers, etc. on write or immediately
+    // * pro on write:
+    //   * performance - less reallocating shstrtab, recomputing offsets, etc.
+    //   * very hard to track what needs to be updated.
+    //     How do you know if gaps are intentional or due to a removed section, etc.?
+    // * pro immediately:
+    //   * data does not go out of sync
+    //   * issues are detected immediately
+    //   * use knowledge of modification to reduce update scope
+    //      * easier to test as a result
+    // => I'll adjust everything immediately
+
+    const name_index = try self.addSectionName(source, section_name);
+    _ = name_index;
+    _ = content;
+
+    //defer self.handle_counter += 1;
+    //try self.sections.append(Section{.name = section_name, .content = .{.data = content }, .handle = self.handle_counter, .header = .{},);
 }
 
 pub fn removeSection(self: *@This()) void {
@@ -195,12 +287,15 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     // section content
     for (self.sections.items) |section| {
         switch (section.content) {
-            .data => |data| {
+            .data, .data_allocated => |data| {
                 try out_stream.seekTo(section.header.sh_offset);
                 try writer.writeAll(data);
             },
             .no_bits => {},
             .input_file_range => |range| {
+                // TODO: convert the section content from file range to data allocated
+                // => no need to free the memory here and read again in case it is written a second time
+                // => do that directly in readContentAlloc?
                 const data = section.readContentAlloc(source, allocator) catch |err| {
                     std.log.err("failed reading '{s}' section content at 0x{x} of size 0x{x} ({d}): {}", .{
                         section.name,
@@ -272,12 +367,15 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     errdefer sections.deinit();
     {
         var section_it = header.section_header_iterator(source);
+        var i: usize = 0;
         while (try section_it.next()) |section| {
-            if (section.sh_name >= string_table_content.len)
-                fatal("invalid ELF input file: section name offset {d} exceeds strtab size {d}", .{ section.sh_name, string_table_content.len });
+            defer i += 1;
+            if (section.sh_name >= string_table_content.len) fatal(
+                "invalid ELF input file: section {d} name offset {d} exceeds strtab size {d}",
+                .{ i, section.sh_name, string_table_content.len },
+            );
 
-            // TODO: extract function
-            // name is always copied, so the string table content can be free'd
+            // name is always copied, so the string table content can be freed
             const name_source = std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[section.sh_name])));
             const name = try allocator.dupe(u8, name_source);
 
@@ -369,6 +467,7 @@ inline fn isSectionInFile(section_header: std.elf.Shdr) bool {
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
+    if (builtin.mode == .Debug) testing.printStackTrace(@returnAddress());
     std.process.exit(FATAL_EXIT_CODE);
 }
 
@@ -508,4 +607,46 @@ fn createTestElfBuffer() ![256]u8 {
     }
 
     return in_buffer;
+}
+
+test addSectionName {
+    // TODO: NYI
+    // const sections = Elf.Sections.init(t.allocator);
+
+    // var elf = Elf{
+    //     .section_handle_counter = 1,
+    //     .e_ident = .{
+    //         .ei_class = .elfclass64,
+    //         .ei_data = .little,
+    //         .ei_version = .ev_current,
+    //         .ei_osabi = std.elf.OSABI.NONE,
+    //         .ei_abiversion = 0,
+    //     },
+    //     .e_type = std.elf.ET.DYN,
+    //     .e_machine = std.elf.EM.X86_64,
+    //     .e_version = .ev_current,
+    //     .e_entry = 0x128,
+    //     .e_phoff = 64,
+    //     .e_shoff = 800,
+    //     .e_flags = 0,
+    //     .e_ehsize = @sizeOf(std.elf.Ehdr),
+    //     .e_phentsize = @sizeOf(std.elf.Phdr),
+    //     .e_phnum = 0,
+    //     .e_shentsize = @sizeOf(std.elf.Shdr),
+    //     .e_shnum = 2,
+    //     .e_shstrndx = 1,
+    //     .sections = sections,
+    //     .program_segments = Elf.ProgramSegments.init(t.allocator),
+    //     .allocator = t.allocator,
+    // };
+
+    // try sections.append(.{
+    //     .handle = elf.getNextSectionHandle(),
+    //     .header = .{},
+    //     .content = "",
+    //     .name = ".shstrtab",
+    // });
+
+    // const name_index = try elf.addSectionName(".new_section");
+    // _ = name_index;
 }

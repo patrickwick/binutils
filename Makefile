@@ -1,10 +1,11 @@
 # Convenience targets for temporary tests that are not meant to be part of build.zig
 all:
-	${MAKE} build
 	${MAKE} test
+	${MAKE} build
 	${MAKE} readelf
 	${MAKE} readelf-args
 	${MAKE} objcopy
+	${MAKE} objcopy-add-section
 
 .PHONY: watch
 watch:
@@ -33,5 +34,11 @@ readelf-args: ./reproduction/ls
 .PHONY: objcopy
 objcopy: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out
+	zig build run -- readelf ./reproduction/ls_out -hSl
+	./reproduction/ls_out
+
+.PHONY: objcopy-add-section
+objcopy-add-section: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out --add-section .abc=./reproduction/ls
 	zig build run -- readelf ./reproduction/ls_out -hSl
 	./reproduction/ls_out

@@ -1,3 +1,4 @@
+// TODO: consider inlining this file into Elf.zig
 const std = @import("std");
 
 pub const Section = @This();
@@ -10,8 +11,10 @@ pub const InputFileRange = struct {
     size: usize,
 };
 
-// SHT_NOBITS section like .bss do not store content in the ELF file
 pub const NoBits = struct {
+    // TODO: are those required at all?
+    // * the information is stored in the header, so it's redundant and can go out of sync.
+    // * rename: they're **not** file offsets / sizes, they're process virtual addresses / memory size when laoded.
     offset: usize,
     size: usize,
 };
@@ -19,11 +22,18 @@ pub const NoBits = struct {
 // new data written into new sections that did not exist in the input
 pub const Data = []const u8;
 
-// section contents have different sources
+/// Section contents have different sources and are only loaded and copied on demand.
+/// For example, appending data to a section from the input file converts it from a file range to a modified heap allocated copy of the input section.
+/// Unmodified sections remain file range references and are only read on demand when writing the ELF file.
 pub const ContentSource = union(enum) {
+    /// Each section only references the input file range when read initially.
     input_file_range: InputFileRange,
+    /// SHT_NOBITS sections (e.g.: .bss) are not contained in the file. All information is contained in the headers.
     no_bits: NoBits,
+    /// Section content that is written programmatically.
     data: Data,
+    /// Section content that is written programmatically and needs to be freed.
+    data_allocated: Data,
 
     pub inline fn fileSize(self: *const @This()) usize {
         return switch (self.*) {
@@ -72,7 +82,7 @@ pub fn readContentAlloc(self: *const @This(), input: anytype, allocator: std.mem
             return data;
         },
         .no_bits => return "", // e.g.: .bss
-        .data => |data| {
+        .data, .data_allocated => |data| {
             const copy = try allocator.alloc(u8, data.len);
             @memcpy(copy, data);
             return copy;

@@ -25,19 +25,21 @@ pub fn expectExit(comptime expected_exit_code: u32, function: anytype) !void {
     if (exit_code != expected_exit_code) {
         std.testing.expectEqual(expected_exit_code, exit_code) catch |err| {
             std.log.err("Function did not exit with the expected error code", .{});
-
-            const max_frames = 20;
-            var addresses: [max_frames]usize = [1]usize{0} ** max_frames;
-            var stack_trace = std.builtin.StackTrace{
-                .instruction_addresses = &addresses,
-                .index = 0,
-            };
-            std.debug.captureStackTrace(@returnAddress(), &stack_trace);
-            std.debug.dumpStackTrace(stack_trace);
-
+            printStackTrace(@returnAddress());
             return err;
         };
     }
+}
+
+pub fn printStackTrace(return_address: usize) void {
+    const max_frames = 20;
+    var addresses: [max_frames]usize = [1]usize{0} ** max_frames;
+    var stack_trace = std.builtin.StackTrace{
+        .instruction_addresses = &addresses,
+        .index = 0,
+    };
+    std.debug.captureStackTrace(return_address, &stack_trace);
+    std.debug.dumpStackTrace(stack_trace);
 }
 
 const t = std.testing;

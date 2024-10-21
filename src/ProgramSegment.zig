@@ -1,3 +1,4 @@
+// TODO: consider inlining this file into Elf.zig
 const std = @import("std");
 
 const Section = @import("Section.zig").Section;

@@ -92,6 +92,7 @@ e_shstrndx: usize,
 
 sections: Sections,
 program_segments: ProgramSegments,
+string_table_content: []const u8, // TODO: add type?
 
 allocator: std.mem.Allocator,
 
@@ -102,6 +103,7 @@ pub fn init(
     e_version: Version,
     sections: Sections,
     program_segments: ProgramSegments,
+    string_table_content: []const u8,
 ) !@This() {
     return .{
         .section_handle_counter = sections.items.len + 1,
@@ -127,20 +129,17 @@ pub fn init(
         .e_shstrndx = header.shstrndx,
         .sections = sections,
         .program_segments = program_segments,
+        .string_table_content = string_table_content,
         .allocator = allocator,
     };
 }
 
 pub fn deinit(self: *@This()) void {
-    for (self.sections.items) |section| {
-        self.allocator.free(section.name);
-        switch (section.content) {
-            .data_allocated => |data| self.allocator.free(data),
-            else => {},
-        }
-    }
+    // TODO: use sections / segments types with deinit functions
+    for (self.sections.items) |*section| section.deinit();
     self.sections.deinit();
     self.program_segments.deinit();
+    self.allocator.free(self.string_table_content);
 }
 
 pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
@@ -238,6 +237,14 @@ pub fn removeSection(self: *@This()) void {
     _ = self;
 }
 
+pub fn getSectionName(self: *const @This(), section: Section) []const u8 {
+    if (section.header.sh_name >= self.string_table_content.len) fatal(
+        "invalid ELF input file: section name offset {d} exceeds strtab size {d}",
+        .{ section.header.sh_name, self.string_table_content.len },
+    );
+    return std.mem.span(@as([*:0]const u8, @ptrCast(&self.string_table_content[section.header.sh_name])));
+}
+
 pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, target: anytype) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "writer"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "seekableStream"));
@@ -285,32 +292,14 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     }
 
     // section content
-    for (self.sections.items) |section| {
+    for (self.sections.items) |*section| {
         switch (section.content) {
-            .data, .data_allocated => |data| {
+            .input_file_range, .data, .data_allocated => {
+                const data = try section.readContent(source, allocator);
                 try out_stream.seekTo(section.header.sh_offset);
                 try writer.writeAll(data);
             },
             .no_bits => {},
-            .input_file_range => |range| {
-                // TODO: convert the section content from file range to data allocated
-                // => no need to free the memory here and read again in case it is written a second time
-                // => do that directly in readContentAlloc?
-                const data = section.readContentAlloc(source, allocator) catch |err| {
-                    std.log.err("failed reading '{s}' section content at 0x{x} of size 0x{x} ({d}): {}", .{
-                        section.name,
-                        range.offset,
-                        range.size,
-                        range.size,
-                        err,
-                    });
-                    return err;
-                };
-                defer allocator.free(data);
-
-                try out_stream.seekTo(section.header.sh_offset);
-                try writer.writeAll(data);
-            },
         }
     }
 }
@@ -337,8 +326,10 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
 
     const header = try std.elf.Header.read(source);
 
+    // TODO: put the section into sections immediately then skip it later
+    // => avoid reading the content twice
     var section_handle_counter: Section.Handle = 1;
-    const string_table_section = shstrtab: {
+    var string_table_section = shstrtab: {
         // NOTE: iterator already accounts for endianess, so it always has native endianness
         var section_it = header.section_header_iterator(source);
         var i: usize = 0;
@@ -352,19 +343,27 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 defer section_handle_counter += 1;
                 break :shstrtab Section{
                     .handle = section_handle_counter,
-                    .name = ".shstrtab", // TODO: use name from shstrtab itself instead of hardcoding it
+                    // .name = ".shstrtab", // TODO: use name from shstrtab itself instead of hardcoding it
                     .header = section,
                     .content = .{ .input_file_range = .{ .offset = section.sh_offset, .size = section.sh_size } },
+                    .allocator = allocator,
                 };
             }
         }
         fatal("input ELF file does not contain a string table section (usually .shstrtab)", .{});
     };
-    const string_table_content = try string_table_section.readContentAlloc(source, allocator);
-    defer allocator.free(string_table_content);
+    defer string_table_section.deinit();
+    const string_table_content_slice = try string_table_section.readContent(source, allocator);
+    const string_table_content = try allocator.dupe(u8, string_table_content_slice);
+    errdefer allocator.free(string_table_content);
 
     var sections = Sections.init(allocator);
-    errdefer sections.deinit();
+    errdefer {
+        // TODO: use sections / segments types with deinit functions
+        for (sections.items) |*section| section.deinit();
+        sections.deinit();
+    }
+
     {
         var section_it = header.section_header_iterator(source);
         var i: usize = 0;
@@ -374,10 +373,6 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 "invalid ELF input file: section {d} name offset {d} exceeds strtab size {d}",
                 .{ i, section.sh_name, string_table_content.len },
             );
-
-            // name is always copied, so the string table content can be freed
-            const name_source = std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[section.sh_name])));
-            const name = try allocator.dupe(u8, name_source);
 
             const content: Section.ContentSource = if (isSectionInFile(section)) .{
                 .input_file_range = .{
@@ -394,9 +389,10 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
             defer section_handle_counter += 1;
             try sections.append(.{
                 .handle = section_handle_counter,
-                .name = name,
+                // .name = name,
                 .header = section,
                 .content = content,
+                .allocator = allocator,
             });
         }
     }
@@ -409,7 +405,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     while (try program_it.next()) |program_header| {
         defer segment_i += 1;
         var segment_mapping = ProgramSegment.SegmentMapping.init(allocator);
-        for (sections.items) |section| {
+        for (sections.items, 0..) |section, section_i| {
             // NOBITS section like .bss are not contained in the file, so they're handled differently
             if (section.header.sh_type == std.elf.SHT_NOBITS) {
                 const segment_start = program_header.p_vaddr;
@@ -431,8 +427,8 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 // * end is between section start and end but start is not before section start
                 if ((segment_start >= section_start and segment_start < section_end and segment_end < section_end) //
                 or (segment_end > section_start and segment_end <= section_end and segment_start > section_start)) fatal(
-                    "segment {d} (0x{x}-0x{x}) is not allowed to map '{s}' section subset (0x{x}-0x{x}). Only entire sections can be mapped",
-                    .{ segment_i, segment_start, segment_end, section.name, section_start, section_end },
+                    "segment {d} (0x{x}-0x{x}) is not allowed to map section {d} subset (0x{x}-0x{x}). Only entire sections can be mapped",
+                    .{ segment_i, segment_start, segment_end, section_i, section_start, section_end },
                 );
 
                 if (segment_start <= section_start and segment_end >= section_end) {
@@ -447,7 +443,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         });
     }
 
-    return try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
+    return try @This().init(allocator, header, ei_version, e_version, sections, program_segments, string_table_content);
 }
 
 pub fn getSection(self: *const @This(), handle: Section.Handle) ?Section {

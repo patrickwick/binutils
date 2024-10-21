@@ -122,7 +122,7 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
 
     const indentation = indentation: {
         var longest_name: usize = 0;
-        for (elf.sections.items) |section| longest_name = @max(longest_name, section.name.len);
+        for (elf.sections.items) |section| longest_name = @max(longest_name, elf.getSectionName(section).len);
         break :indentation longest_name;
     };
 
@@ -176,8 +176,9 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
             else => "INVALID",
         };
 
-        try out.print("  [{s}{d}] {s} ", .{ if (i < 10) " " else "", i, section.name });
-        try out.writeByteNTimes(' ', indentation - section.name.len);
+        const section_name = elf.getSectionName(section);
+        try out.print("  [{s}{d}] {s} ", .{ if (i < 10) " " else "", i, section_name });
+        try out.writeByteNTimes(' ', indentation - section_name.len);
         try out.writeAll(type_name);
         const type_indentation = 14;
         try out.writeByteNTimes(' ', type_indentation - type_name.len);
@@ -394,7 +395,8 @@ fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
                 "corrupt section to segment mapping: segment {d} references non existing section handle {d}",
                 .{ i, mapping },
             );
-            if (section.name.len > 0) try out.print("{s} ", .{section.name});
+            const name = elf.getSectionName(section);
+            if (name.len > 0) try out.print("{s} ", .{name});
         }
         try out.writeByte('\n');
     }
@@ -465,6 +467,7 @@ test printElfHeader {
         .e_shstrndx = 1,
         .sections = Elf.Sections.init(t.allocator),
         .program_segments = Elf.ProgramSegments.init(t.allocator),
+        .string_table_content = "not required for this test",
         .allocator = t.allocator,
     };
     try printElfHeader(out_buffer_stream.writer().any(), &elf);

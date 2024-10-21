@@ -55,8 +55,6 @@ pub const ContentSource = union(enum) {
 // unique handle to identify the section without comparing names
 handle: Handle,
 
-name: []const u8, // head allocated copy
-
 // TODO: sh_name, sh_offset and sh_size may go out of sync and are fixed during processing. Is this avoidable?
 // * sh_name: if any section name before was changed / removed / added
 // * sh_offset: if any section content before was resized, have updated alignment or are reordered
@@ -65,13 +63,22 @@ name: []const u8, // head allocated copy
 header: std.elf.Shdr,
 content: ContentSource,
 
-// User has to free memory
-pub fn readContentAlloc(self: *const @This(), input: anytype, allocator: std.mem.Allocator) ![]const u8 {
+allocator: std.mem.Allocator,
+
+pub fn deinit(self: *@This()) void {
+    switch (self.content) {
+        .data_allocated => |data| self.allocator.free(data),
+        .input_file_range, .data, .no_bits => {},
+    }
+}
+
+pub fn readContent(self: *@This(), input: anytype, allocator: std.mem.Allocator) ![]const u8 {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
     switch (self.content) {
         .input_file_range => |range| {
+            self.allocator = allocator;
             const data = try allocator.alloc(u8, range.size);
             errdefer allocator.free(data);
 
@@ -79,14 +86,13 @@ pub fn readContentAlloc(self: *const @This(), input: anytype, allocator: std.mem
             const bytes_read = try input.reader().readAll(data);
             if (bytes_read != data.len) return error.TruncatedElf;
 
+            // converts to data allocated once read, so it's not read from file again
+            self.content = .{ .data_allocated = data };
+
             return data;
         },
         .no_bits => return "", // e.g.: .bss
-        .data, .data_allocated => |data| {
-            const copy = try allocator.alloc(u8, data.len);
-            @memcpy(copy, data);
-            return copy;
-        },
+        .data, .data_allocated => |data| return data,
     }
 }
 

@@ -467,7 +467,6 @@ test printElfHeader {
         .e_shstrndx = 1,
         .sections = Elf.Sections.init(t.allocator),
         .program_segments = Elf.ProgramSegments.init(t.allocator),
-        .string_table_content = "not required for this test",
         .allocator = t.allocator,
     };
     try printElfHeader(out_buffer_stream.writer().any(), &elf);

@@ -92,7 +92,6 @@ e_shstrndx: usize,
 
 sections: Sections,
 program_segments: ProgramSegments,
-string_table_content: []const u8, // TODO: add type?
 
 allocator: std.mem.Allocator,
 
@@ -103,7 +102,6 @@ pub fn init(
     e_version: Version,
     sections: Sections,
     program_segments: ProgramSegments,
-    string_table_content: []const u8,
 ) !@This() {
     return .{
         .section_handle_counter = sections.items.len + 1,
@@ -129,7 +127,6 @@ pub fn init(
         .e_shstrndx = header.shstrndx,
         .sections = sections,
         .program_segments = program_segments,
-        .string_table_content = string_table_content,
         .allocator = allocator,
     };
 }
@@ -139,7 +136,6 @@ pub fn deinit(self: *@This()) void {
     for (self.sections.items) |*section| section.deinit();
     self.sections.deinit();
     self.program_segments.deinit();
-    self.allocator.free(self.string_table_content);
 }
 
 pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
@@ -152,49 +148,16 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
 
     const shstrtab = &self.sections.items[self.e_shstrndx];
-    var name_index: usize = 0;
-    const copy = switch (shstrtab.content) {
-        .data => |data| copy: {
-            name_index = data.len;
+    const data = try shstrtab.readContent(source, self.allocator);
+    const name_index = data.len;
+    const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
 
-            const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
-            errdefer self.allocator.free(copy);
-            @memcpy(copy[0..data.len], data);
-
-            break :copy copy;
-        },
-        .data_allocated => |data| copy: {
-            name_index = data.len + 1;
-
-            const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
-            errdefer self.allocator.free(copy);
-            @memcpy(copy[0..data.len], data);
-            self.allocator.free(data);
-
-            break :copy copy;
-        },
-        .input_file_range => |range| data: {
-            name_index = range.size;
-
-            const copy = try self.allocator.alloc(u8, range.size + section_name.len + 1);
-            errdefer self.allocator.free(copy);
-
-            try source.seekableStream().seekTo(range.offset);
-            const bytes_read = try source.reader().readAll(copy[0..range.size]);
-            if (bytes_read != range.size) return error.TruncatedElf;
-
-            break :data copy;
-        },
-        .no_bits => fatal("unexpected NOBITS section name string table section", .{}),
-    };
-
-    std.debug.assert(name_index != 0);
     std.debug.assert(copy.len > 0);
     @memcpy(copy[name_index .. copy.len - 1], section_name);
     copy[copy.len - 1] = 0;
 
     // TODO: update content
-    // shstrtab.content = .{ .data_allocated = copy };
+    shstrtab.content = .{ .data_allocated = copy };
 
     // relocate content after updated shstrtab section due to size increase
     // TODO: relocate section headers and update sh_shoff
@@ -237,12 +200,15 @@ pub fn removeSection(self: *@This()) void {
     _ = self;
 }
 
+// Precondition: shstrtab is located in sections at index e_shstrndx
 pub fn getSectionName(self: *const @This(), section: Section) []const u8 {
-    if (section.header.sh_name >= self.string_table_content.len) fatal(
+    const shstrtab = self.sections.items[self.e_shstrndx];
+    const string_table_content = shstrtab.content.data_allocated;
+    if (section.header.sh_name >= string_table_content.len) fatal(
         "invalid ELF input file: section name offset {d} exceeds strtab size {d}",
-        .{ section.header.sh_name, self.string_table_content.len },
+        .{ section.header.sh_name, string_table_content.len },
     );
-    return std.mem.span(@as([*:0]const u8, @ptrCast(&self.string_table_content[section.header.sh_name])));
+    return std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[section.header.sh_name])));
 }
 
 pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, target: anytype) !void {
@@ -326,8 +292,13 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
 
     const header = try std.elf.Header.read(source);
 
-    // TODO: put the section into sections immediately then skip it later
-    // => avoid reading the content twice
+    var sections = Sections.init(allocator);
+    errdefer {
+        // TODO: use sections / segments types with deinit functions
+        for (sections.items) |*section| section.deinit();
+        sections.deinit();
+    }
+
     var section_handle_counter: Section.Handle = 1;
     var string_table_section = shstrtab: {
         // NOTE: iterator already accounts for endianess, so it always has native endianness
@@ -343,7 +314,6 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 defer section_handle_counter += 1;
                 break :shstrtab Section{
                     .handle = section_handle_counter,
-                    // .name = ".shstrtab", // TODO: use name from shstrtab itself instead of hardcoding it
                     .header = section,
                     .content = .{ .input_file_range = .{ .offset = section.sh_offset, .size = section.sh_size } },
                     .allocator = allocator,
@@ -352,23 +322,17 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         }
         fatal("input ELF file does not contain a string table section (usually .shstrtab)", .{});
     };
-    defer string_table_section.deinit();
-    const string_table_content_slice = try string_table_section.readContent(source, allocator);
-    const string_table_content = try allocator.dupe(u8, string_table_content_slice);
-    errdefer allocator.free(string_table_content);
-
-    var sections = Sections.init(allocator);
-    errdefer {
-        // TODO: use sections / segments types with deinit functions
-        for (sections.items) |*section| section.deinit();
-        sections.deinit();
-    }
+    const string_table_content = try string_table_section.readContent(source, allocator);
 
     {
         var section_it = header.section_header_iterator(source);
         var i: usize = 0;
-        while (try section_it.next()) |section| {
-            defer i += 1;
+        while (try section_it.next()) |section| : (i += 1) {
+            if (i == header.shstrndx) {
+                try sections.append(string_table_section);
+                continue;
+            }
+
             if (section.sh_name >= string_table_content.len) fatal(
                 "invalid ELF input file: section {d} name offset {d} exceeds strtab size {d}",
                 .{ i, section.sh_name, string_table_content.len },
@@ -389,7 +353,6 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
             defer section_handle_counter += 1;
             try sections.append(.{
                 .handle = section_handle_counter,
-                // .name = name,
                 .header = section,
                 .content = content,
                 .allocator = allocator,
@@ -443,7 +406,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         });
     }
 
-    return try @This().init(allocator, header, ei_version, e_version, sections, program_segments, string_table_content);
+    return try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
 }
 
 pub fn getSection(self: *const @This(), handle: Section.Handle) ?Section {

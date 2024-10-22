@@ -47,4 +47,5 @@ objcopy-add-section: ./reproduction/ls
 .PHONY: objcopy-only-section
 objcopy-only-section: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text --only-section=.text
+	# zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text -j .text
 	zig build run -- readelf ./reproduction/ls_objcopy_only_section_text -hSl

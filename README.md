@@ -65,6 +65,9 @@ Usage: binutils objcopy [options] in-file out-file
 
 Options:
 
+  -j <section>, --only-section=<section>
+      Remove all sections except <section> and the section name table section (.shstrtab)
+
   --add-section <name>=<file>
       Add file content from <file> with the a new section named <name>.
 

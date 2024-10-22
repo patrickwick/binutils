@@ -162,7 +162,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                             .{ arg, opt },
                         );
                         add_section = .{ .section_name = split.first, .file_path = split.second };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting it to be followed by <name>=<flags>", .{arg});
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-section <name>=<flags>", .{arg});
                     continue;
                 }
 
@@ -180,6 +180,12 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                 // single dash args allow 0 to n options
                 for (arg[1..]) |c| {
                     switch (c) {
+                        'j' => {
+                            if (args.len > i + 1) {
+                                i += 1;
+                                only_section = .{ .section_name = args[i] };
+                            } else fatalPrintUsageObjCopy(out, "unrecognized -j argument, expecting -j <section>", .{});
+                        },
                         else => fatalPrintUsageObjCopy(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
                     }
                 }
@@ -264,11 +270,11 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
         \\
         \\Options:
         \\
+        \\  -j <section>, --only-section=<section>
+        \\      Remove all sections except <section> and the section name table section (.shstrtab)
+        \\
         \\  --add-section <name>=<file>
         \\      Add file content from <file> with the a new section named <name>.
-        \\
-        \\  --only-section=<section>
-        \\      Remove all sections except <section> and the section name table section (.shstrtab)
         \\
         \\General Options:
         \\

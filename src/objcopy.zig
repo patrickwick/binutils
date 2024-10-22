@@ -9,12 +9,17 @@ const FATAL_EXIT_CODE = 1;
 pub const ObjCopyOptions = struct {
     in_file_path: []const u8,
     out_file_path: []const u8,
-    add_section: ?AddSectionOptions,
+    add_section: ?AddSectionOption = null,
+    only_section: ?OnlySectionOption = null,
 };
 
-pub const AddSectionOptions = struct {
+pub const AddSectionOption = struct {
     section_name: []const u8,
     file_path: []const u8,
+};
+
+pub const OnlySectionOption = struct {
+    section_name: []const u8,
 };
 
 pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {

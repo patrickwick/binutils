@@ -140,7 +140,8 @@ fn parseObjDump(out: std.io.AnyWriter, args: []const []const u8) objdump.ObjDump
 fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopyOptions {
     var in_file_path: ?[]const u8 = null;
     var out_file_path: ?[]const u8 = null;
-    var add_section: ?objcopy.AddSectionOptions = null;
+    var add_section: ?objcopy.AddSectionOption = null;
+    var only_section: ?objcopy.OnlySectionOption = null;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -150,6 +151,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
             if (arg.len > 1 and arg[1] == '-') {
                 // TODO: --help => print usage and exit
 
+                // --add-section <name>=<file>
                 if (std.mem.eql(u8, arg, "--add-section")) {
                     if (args.len > i + 1) {
                         defer i += 1;
@@ -161,6 +163,17 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                         );
                         add_section = .{ .section_name = split.first, .file_path = split.second };
                     } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting it to be followed by <name>=<flags>", .{arg});
+                    continue;
+                }
+
+                // --only-section=<section>
+                if (std.mem.startsWith(u8, arg, "--only-section")) {
+                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized --only-section argument: '{s}', expecting --only-section=<section>",
+                        .{arg},
+                    );
+                    only_section = .{ .section_name = split.second };
                     continue;
                 }
             } else {
@@ -200,6 +213,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
         .in_file_path = in_file_path.?,
         .out_file_path = out_file_path.?,
         .add_section = add_section,
+        .only_section = only_section,
     };
 }
 
@@ -252,6 +266,9 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
         \\
         \\  --add-section <name>=<file>
         \\      Add file content from <file> with the a new section named <name>.
+        \\
+        \\  --only-section=<section>
+        \\      Remove all sections except <section>
         \\
         \\General Options:
         \\
@@ -548,7 +565,7 @@ test parseObjCopy {
 
     // positional argument
     try t.expectEqualDeep(
-        objcopy.ObjCopyOptions{ .in_file_path = "./in", .out_file_path = "./out", .add_section = null },
+        objcopy.ObjCopyOptions{ .in_file_path = "./in", .out_file_path = "./out" },
         parseObjCopy(writer, &.{ "./in", "./out" }),
     );
 }

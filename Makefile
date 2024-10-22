@@ -42,3 +42,9 @@ objcopy-add-section: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out --add-section .abc=./reproduction/ls
 	zig build run -- readelf ./reproduction/ls_out -hSl
 	./reproduction/ls_out
+
+.PHONY: objcopy-only-section
+objcopy-only-section: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out --only-section=.shstrtab
+	zig build run -- readelf ./reproduction/ls_out -hSl
+	./reproduction/ls_out

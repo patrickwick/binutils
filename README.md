@@ -1,6 +1,6 @@
 # Binutils
 
-binutils implementation aiming to improve the current zig objcopy implementation in terms of robustness and limitations.
+binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
 
 I may create a PR to zig **if** this turns out to be worthy to be reviewed.
@@ -16,7 +16,7 @@ Zig objcopy currently has strict limitations:
     * sections cannot be reordered
 * testing is difficult due to scattered use of the file system and nested code
 
-There are many possible optimizations that won't be done before the existing zig objcopy feature set without the limitations is achieved.
+There are many possible optimizations that won't be done before the existing zig objcopy ELF to ELF feature set without the limitations is achieved.
 Input file modifications are avoided as much as possible, i.e.: sections and headers are only relocated when necessary.
 
 ## Usage

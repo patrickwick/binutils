@@ -67,6 +67,27 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         );
     }
 
+    // --only-section
+    if (options.only_section) |only_section| {
+        // double loop since iteration needs to be restarted on modified array
+        while (true) {
+            for (elf.sections.items, 0..) |*section, i| {
+                // keep null section and section name string table section
+                if (i == 0 or i == elf.e_shstrndx) continue;
+
+                const name = elf.getSectionName(section);
+                if (std.mem.eql(u8, name, only_section.section_name)) continue;
+
+                elf.removeSection(section.handle) catch |err| fatal(
+                    "failed removing section '{s}': {s}",
+                    .{ name, @errorName(err) },
+                );
+
+                break; // restart iteration => items are invalidated
+            } else break;
+        }
+    }
+
     elf.write(allocator, in_file, out_file) catch |err| fatal(
         "failed writing output '{s}': {s}",
         .{ options.out_file_path, @errorName(err) },

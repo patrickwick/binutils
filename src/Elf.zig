@@ -258,6 +258,7 @@ pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
 }
 
 // TODO: critical function => must be well tested
+// TODO: add markdown documentation on what variants need to hold and are violated by which operation?
 fn fixup(self: *@This()) !void {
     // relocate headers and sections contents due to size increase if needed
     var sorted_sections = try self.sections.clone();
@@ -492,7 +493,6 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     const not_mapped = 0;
     const dynamic = 0;
 
-    // FIXME: need to relocate AFTER adding the new header => offset and e_shnum will not be correct
     try self.sections.append(.{
         .handle = self.getNextSectionHandle(),
         .header = .{
@@ -515,8 +515,6 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     // overwrite offset again after fixup since the new header was not accounted
     try self.fixup();
     self.sections.items[self.sections.items.len - 1].header.sh_offset = self.getMaximumFileOffset();
-
-    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }
 
 fn getMaximumFileOffset(self: *const @This()) usize {
@@ -538,9 +536,22 @@ fn getMaximumFileOffset(self: *const @This()) usize {
     return std.mem.alignForward(usize, highest, default_file_alignment);
 }
 
-pub fn removeSection(self: *@This()) void {
-    // TODO: NYI
-    _ = self;
+pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
+    const index = for (self.sections.items, 0..) |*section, i| {
+        if (section.handle == handle) break i;
+    } else return error.SectionNotFound;
+
+    std.debug.assert(self.e_shnum > 0);
+    self.e_shnum -= 1;
+    if (index < self.e_shstrndx) self.e_shstrndx -= 1;
+
+    self.sections.items[index].deinit();
+    _ = self.sections.orderedRemove(index);
+
+    // TODO: update shstrtab => remove name
+    // TODO: update sh_name for removed name
+
+    try self.fixup();
 }
 
 // Precondition: shstrtab is located in sections at index e_shstrndx
@@ -970,6 +981,25 @@ test addSection {
     // FIXME: sections is added after headers, not last section
     // const new = &elf.sections.items[elf.sections.items.len - 1];
     // try t.expectEqual(last_section.header.sh_offset + last_section.header.sh_size, new.header.sh_offset);
+
+    try assertElf(&elf);
+}
+
+test removeSection {
+    const allocator = t.allocator;
+
+    var in_buffer = try createTestElfBuffer();
+    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var elf = try read(allocator, &in_buffer_stream);
+    defer elf.deinit();
+
+    // add section and remove it again
+    const old_section_count = elf.sections.items.len;
+    try elf.addSection(&in_buffer_stream, ".abc", "content");
+    try t.expectEqual(old_section_count + 1, elf.sections.items.len);
+
+    try elf.removeSection(elf.sections.items[elf.sections.items.len - 1].handle);
+    try t.expectEqual(old_section_count, elf.sections.items.len);
 
     try assertElf(&elf);
 }

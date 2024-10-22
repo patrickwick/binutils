@@ -6,6 +6,7 @@ all:
 	${MAKE} readelf-args
 	${MAKE} objcopy
 	${MAKE} objcopy-add-section
+	${MAKE} objcopy-only-section
 
 .PHONY: watch
 watch:
@@ -33,18 +34,17 @@ readelf-args: ./reproduction/ls
 
 .PHONY: objcopy
 objcopy: ./reproduction/ls
-	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out
-	zig build run -- readelf ./reproduction/ls_out -hSl
-	./reproduction/ls_out
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_no_args
+	zig build run -- readelf ./reproduction/ls_objcopy_no_args -hSl
+	./reproduction/ls_objcopy_no_args
 
 .PHONY: objcopy-add-section
 objcopy-add-section: ./reproduction/ls
-	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out --add-section .abc=./reproduction/ls
-	zig build run -- readelf ./reproduction/ls_out -hSl
-	./reproduction/ls_out
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_add_section --add-section .abc=./reproduction/ls
+	zig build run -- readelf ./reproduction/ls_objcopy_add_section -hSl
+	./reproduction/ls_objcopy_add_section
 
 .PHONY: objcopy-only-section
 objcopy-only-section: ./reproduction/ls
-	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_out --only-section=.shstrtab
-	zig build run -- readelf ./reproduction/ls_out -hSl
-	./reproduction/ls_out
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text --only-section=.text
+	zig build run -- readelf ./reproduction/ls_objcopy_only_section_text -hSl

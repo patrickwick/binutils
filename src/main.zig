@@ -170,7 +170,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                 if (std.mem.startsWith(u8, arg, "--only-section")) {
                     const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
                         out,
-                        "unrecognized --only-section argument: '{s}', expecting --only-section=<section>",
+                        "unrecognized argument: '{s}', expecting --only-section=<section>",
                         .{arg},
                     );
                     only_section = .{ .section_name = split.second };
@@ -268,7 +268,7 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
         \\      Add file content from <file> with the a new section named <name>.
         \\
         \\  --only-section=<section>
-        \\      Remove all sections except <section>
+        \\      Remove all sections except <section> and the section name table section (.shstrtab)
         \\
         \\General Options:
         \\
@@ -296,6 +296,10 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
     //   --set-section-alignment <name>=<align>  Set alignment of section <name> to <align> bytes. Must be a power of two.
     //   --set-section-flags <name>=<file>       Set flags of section <name> to <flags> represented as a comma separated set of flags.
     //   --add-section <name>=<file>             Add file content from <file> with the a new section named <name>.
+    //
+    // NOTE: these options are not supported for ELF to ELF copying:
+    // if (options.only_section) |_| fatal("zig objcopy: ELF to ELF copying does not support --only-section", .{});
+    // if (options.pad_to) |_| fatal("zig objcopy: ELF to ELF copying does not support --pad-to", .{});
 
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);

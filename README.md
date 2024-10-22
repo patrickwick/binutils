@@ -17,6 +17,7 @@ Zig objcopy currently has strict limitations:
 * testing is difficult due to scattered use of the file system and nested code
 
 There are many possible optimizations that won't be done before the existing zig objcopy feature set without the limitations is achieved.
+Input file modifications are avoided as much as possible, i.e.: sections and headers are only relocated when necessary.
 
 ## Usage
 
@@ -78,4 +79,3 @@ General Options:
 
 * rejects input if program header loads a subset of a section. It has to load the entire section or nothing at all.
 
-## TODO

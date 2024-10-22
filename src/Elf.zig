@@ -257,6 +257,72 @@ pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
     return self.section_handle_counter;
 }
 
+pub fn validate(self: *const @This()) !void {
+    var sorted_sections = try self.sections.clone();
+    defer sorted_sections.deinit();
+
+    const Sort = struct {
+        fn lessThan(context: *const @This(), left: Section, right: Section) bool {
+            _ = context;
+            return left.header.sh_offset < right.header.sh_offset;
+        }
+    };
+    var sort_context = Sort{};
+    std.mem.sort(Section, sorted_sections.items, &sort_context, Sort.lessThan);
+
+    var previous = &sorted_sections.items[0];
+    for (sorted_sections.items[1..]) |*section| {
+        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+        defer previous = section;
+
+        // content collision
+        if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
+            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with section '{s}' 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.getSectionName(previous),
+                previous.header.sh_offset,
+                previous.header.sh_offset + previous.header.sh_size,
+            });
+        }
+
+        // section header collision
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_shoff,
+            self.e_shoff + self.e_shnum * self.e_shentsize,
+        )) {
+            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with section headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_shoff,
+                self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+        }
+
+        // program header collision
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_phoff,
+            self.e_phoff + self.e_phnum * self.e_phentsize,
+        )) {
+            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with program headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_phoff,
+                self.e_phoff + self.e_phnum * self.e_phentsize,
+            });
+        }
+    }
+
+    // TODO: validate section to segment mapping
+}
+
 pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8) !usize {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
@@ -290,9 +356,8 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     var sort_context = Sort{};
     std.mem.sort(Section, sorted_sections.items, &sort_context, Sort.lessThan);
 
-    // TODO: use these checks and reports in the test verify function
     var previous = &sorted_sections.items[0];
-    for (sorted_sections.items[1..]) |*section| {
+    for (sorted_sections.items[1..], 1..) |*section, section_i| {
         if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
         defer previous = section;
 
@@ -341,8 +406,25 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
                 self.e_shoff + self.e_shnum * self.e_shentsize,
             });
 
-            // TODO: moving the headers also may require shifting down the following sections
-            // => shift immediately instead of hitting this branch again in the next iteration
+            // moving the headers also may require shifting down the following sections
+            // => shift next section immediately instead of relocating the headers again next iteration
+            if (section_i < self.sections.items.len - 1) {
+                const next_section = &self.sections.items[section_i + 1];
+                if (isIntersect(
+                    self.e_shoff,
+                    self.e_shoff + self.e_shnum * self.e_shentsize,
+                    next_section.header.sh_offset,
+                    next_section.header.sh_offset + next_section.header.sh_size,
+                )) {
+                    next_section.header.sh_offset = self.e_shoff + self.e_shnum * self.e_shentsize;
+
+                    std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
+                        self.getSectionName(section),
+                        next_section.header.sh_offset,
+                        next_section.header.sh_offset + next_section.header.sh_size,
+                    });
+                }
+            }
         }
 
         // relocate program headers
@@ -362,21 +444,30 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
 
             const alignment = 8;
             self.e_phoff = std.mem.alignForward(usize, section.header.sh_offset + section.header.sh_size, alignment);
-            std.log.debug("  moving program headers to 0x{x}-0x{x}", .{
-                self.e_phoff,
-                self.e_phoff + self.e_phnum * self.e_phentsize,
-            });
 
-            // TODO: moving the headers also may require shifting down the following sections
-            // => shift immediately instead of hitting this branch again in the next iteration
+            // moving the headers also may require shifting down the following sections
+            // => shift next section immediately instead of relocating the headers again next iteration
+            if (section_i < self.sections.items.len - 1) {
+                const next_section = &self.sections.items[section_i + 1];
+                if (isIntersect(
+                    self.e_phoff,
+                    self.e_phoff + self.e_phnum * self.e_phentsize,
+                    next_section.header.sh_offset,
+                    next_section.header.sh_offset + next_section.header.sh_size,
+                )) {
+                    next_section.header.sh_offset = self.e_phoff + self.e_phnum * self.e_phentsize;
+
+                    std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
+                        self.getSectionName(section),
+                        next_section.header.sh_offset,
+                        next_section.header.sh_offset + next_section.header.sh_size,
+                    });
+                }
+            }
         }
     }
 
     return name_index;
-}
-
-inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: anytype) bool {
-    return a_min < b_max and b_min < a_max;
 }
 
 pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, content: []const u8) !void {
@@ -411,6 +502,7 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     const not_mapped = 0;
     const dynamic = 0;
 
+    // FIXME: need to relocate AFTER adding the new header => offset and e_shnum will not be correct
     try self.sections.append(.{
         .handle = self.getNextSectionHandle(),
         .header = .{
@@ -429,6 +521,8 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
         .allocator = self.allocator,
     });
     self.e_shnum = self.sections.items.len;
+
+    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }
 
 pub fn removeSection(self: *@This()) void {
@@ -645,7 +739,9 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         });
     }
 
-    return try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
+    const elf = try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
+    try elf.validate();
+    return elf;
 }
 
 pub fn getSection(self: *const @This(), handle: Section.Handle) ?*Section {
@@ -660,6 +756,12 @@ inline fn isStringTable(section_header: std.elf.Shdr) bool {
 
 inline fn isSectionInFile(section_header: std.elf.Shdr) bool {
     return section_header.sh_type != std.elf.SHT_NOBITS;
+}
+
+inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: anytype) bool {
+    std.debug.assert(a_min <= a_max);
+    std.debug.assert(b_min <= b_max);
+    return a_min < b_max and b_min < a_max;
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
@@ -696,6 +798,16 @@ test "read endianness conversion" {
     }
 
     // TODO: input endianness does not match native endianness
+}
+
+test isIntersect {
+    try t.expect(isIntersect(0, 10, 0, 10));
+    try t.expect(isIntersect(0, 10, 4, 10));
+    try t.expect(isIntersect(4, 10, 0, 10));
+    try t.expect(isIntersect(0, 10, 4, 8));
+
+    try t.expect(isIntersect(0, 1, 2, 3) == false);
+    try t.expect(isIntersect(2, 3, 0, 1) == false);
 }
 
 test write {

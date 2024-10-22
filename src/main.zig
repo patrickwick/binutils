@@ -260,6 +260,26 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
         \\
     ;
 
+    // TODO: achieve current zig objcopy 0.14.0-dev.1904+e2e79960d functionality:
+    // Usage: zig objcopy [options] input output
+    //
+    // Options:
+    //   -h, --help                              Print this help and exit
+    //   --output-target=<value>                 Format of the output file
+    //   -O <value>                              Alias for --output-target
+    //   --only-section=<section>                Remove all but <section>
+    //   -j <value>                              Alias for --only-section
+    //   --pad-to <addr>                         Pad the last section up to address <addr>
+    //   --strip-debug, -g                       Remove all debug sections from the output.
+    //   --strip-all, -S                         Remove all debug sections and symbol table from the output.
+    //   --only-keep-debug                       Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact.
+    //   --add-gnu-debuglink=<file>              Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
+    //   --extract-to <file>                     Extract the removed sections into <file>, and add a .gnu-debuglink section.
+    //   --compress-debug-sections               Compress DWARF debug sections with zlib
+    //   --set-section-alignment <name>=<align>  Set alignment of section <name> to <align> bytes. Must be a power of two.
+    //   --set-section-flags <name>=<file>       Set flags of section <name> to <flags> represented as a comma separated set of flags.
+    //   --add-section <name>=<file>             Add file content from <file> with the a new section named <name>.
+
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
     out.writeAll(usage) catch @panic("failed printing usage");

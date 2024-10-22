@@ -32,5 +32,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 
+    // TODO: create additional integration test target that creates test executables and libraries to run binutils on.
+
     // TODO: could add fuzz tests in future to create random valid ELF files and commands to be executed
 }

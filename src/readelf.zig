@@ -122,7 +122,7 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
 
     const indentation = indentation: {
         var longest_name: usize = 0;
-        for (elf.sections.items) |section| longest_name = @max(longest_name, elf.getSectionName(section).len);
+        for (elf.sections.items) |*section| longest_name = @max(longest_name, elf.getSectionName(section).len);
         break :indentation longest_name;
     };
 
@@ -142,7 +142,7 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         \\
     );
 
-    for (elf.sections.items, 0..) |section, i| {
+    for (elf.sections.items, 0..) |*section, i| {
         // TODO: extract function
         const type_name = switch (section.header.sh_type) {
             std.elf.SHT_NULL => "NULL",

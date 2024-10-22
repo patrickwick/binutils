@@ -151,48 +151,170 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     const data = try shstrtab.readContent(source, self.allocator);
     const name_index = data.len;
     const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
+    errdefer self.allocator.free(copy);
 
-    std.debug.assert(copy.len > 0);
+    @memcpy(copy[0..name_index], data);
+    self.allocator.free(data);
     @memcpy(copy[name_index .. copy.len - 1], section_name);
     copy[copy.len - 1] = 0;
 
-    // TODO: update content
+    // update content
     shstrtab.content = .{ .data_allocated = copy };
+    shstrtab.header.sh_size = copy.len;
 
-    // relocate content after updated shstrtab section due to size increase
-    // TODO: relocate section headers and update sh_shoff
+    // relocate headers and sections contents due to size increase if needed
+    // TODO: extract fixup function => critical function, must be well tested
+    var sorted_sections = try self.sections.clone();
+    defer sorted_sections.deinit();
 
-    // TODO: relocate program headers and update sh_phoff
+    const Sort = struct {
+        fn lessThan(context: *const @This(), left: Section, right: Section) bool {
+            _ = context;
+            return left.header.sh_offset < right.header.sh_offset;
+        }
+    };
+    var sort_context = Sort{};
+    std.mem.sort(Section, sorted_sections.items, &sort_context, Sort.lessThan);
 
-    // TODO: relocate section content
+    // TODO: use these checks and reports in the test verify function
+    var previous = &sorted_sections.items[0];
+    for (sorted_sections.items[1..]) |*section| {
+        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+        defer previous = section;
 
-    // TODO: update program header offsets
+        // relocate section content
+        if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with section '{s}' 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.getSectionName(previous),
+                previous.header.sh_offset,
+                previous.header.sh_offset + previous.header.sh_size,
+            });
+
+            const alignment = section.header.sh_addralign;
+            section.header.sh_offset = std.mem.alignForward(usize, previous.header.sh_offset + previous.header.sh_size, alignment);
+            std.log.debug("  moving section content to 0x{x}-0x{x}", .{
+                section.header.sh_offset,
+                section.header.sh_offset + self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+
+            // TODO: update program header offsets that map the moved section
+
+            // TODO: move e_entry if it was in the moved section
+        }
+
+        // relocate section headers
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_shoff,
+            self.e_shoff + self.e_shnum * self.e_shentsize,
+        )) {
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with section headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_shoff,
+                self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+
+            const alignment = 8;
+            self.e_shoff = std.mem.alignForward(usize, section.header.sh_offset + section.header.sh_size, alignment);
+            std.log.debug("  moving section headers to 0x{x}-0x{x}", .{
+                self.e_shoff,
+                self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+
+            // TODO: moving the headers also may require shifting down the following sections
+            // => shift immediately instead of hitting this branch again in the next iteration
+        }
+
+        // relocate program headers
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_phoff,
+            self.e_phoff + self.e_phnum * self.e_phentsize,
+        )) {
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with program headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_phoff,
+                self.e_phoff + self.e_phnum * self.e_phentsize,
+            });
+
+            const alignment = 8;
+            self.e_phoff = std.mem.alignForward(usize, section.header.sh_offset + section.header.sh_size, alignment);
+            std.log.debug("  moving program headers to 0x{x}-0x{x}", .{
+                self.e_phoff,
+                self.e_phoff + self.e_phnum * self.e_phentsize,
+            });
+
+            // TODO: moving the headers also may require shifting down the following sections
+            // => shift immediately instead of hitting this branch again in the next iteration
+        }
+    }
 
     return name_index;
+}
+
+inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: anytype) bool {
+    return a_min < b_max and b_min < a_max;
 }
 
 pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, content: []const u8) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
 
-    // TODO: decide on strategy: either update shstrtab, headers, etc. on write or immediately
-    // * pro on write:
-    //   * performance - less reallocating shstrtab, recomputing offsets, etc.
-    //   * very hard to track what needs to be updated.
-    //     How do you know if gaps are intentional or due to a removed section, etc.?
-    // * pro immediately:
-    //   * data does not go out of sync
-    //   * issues are detected immediately
-    //   * use knowledge of modification to reduce update scope
-    //      * easier to test as a result
-    // => I'll adjust everything immediately
-
     const name_index = try self.addSectionName(source, section_name);
-    _ = name_index;
-    _ = content;
 
-    //defer self.handle_counter += 1;
-    //try self.sections.append(Section{.name = section_name, .content = .{.data = content }, .handle = self.handle_counter, .header = .{},);
+    // TODO: revisit spec on restrictions wrt. to alignment
+    const default_file_alignment = 8;
+
+    // TODO: extract function and test well
+    const offset = offset: {
+        var highest: usize = 0;
+        for (self.sections.items) |*section| {
+            if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+            const section_end = section.header.sh_offset + section.header.sh_size;
+            if (highest < section_end) highest = section_end;
+        }
+
+        const section_headers_end = self.e_shoff + self.e_shnum * self.e_shentsize;
+        if (highest < section_headers_end) highest = section_headers_end;
+
+        const program_headers_end = self.e_phoff + self.e_phnum * self.e_phentsize;
+        if (highest < program_headers_end) highest = program_headers_end;
+
+        break :offset std.mem.alignForward(usize, highest, default_file_alignment);
+    };
+
+    const no_flags = 0;
+    const default_address_alignment = 8;
+    const not_mapped = 0;
+    const dynamic = 0;
+
+    try self.sections.append(.{
+        .handle = self.getNextSectionHandle(),
+        .header = .{
+            .sh_name = @intCast(name_index),
+            .sh_type = std.elf.SHT_PROGBITS,
+            .sh_flags = no_flags,
+            .sh_addr = not_mapped,
+            .sh_offset = offset,
+            .sh_size = content.len,
+            .sh_link = std.elf.SHN_UNDEF,
+            .sh_info = std.elf.SHN_UNDEF,
+            .sh_addralign = default_address_alignment,
+            .sh_entsize = dynamic,
+        },
+        .content = .{ .data_allocated = try self.allocator.dupe(u8, content) },
+        .allocator = self.allocator,
+    });
+    self.e_shnum = self.sections.items.len;
 }
 
 pub fn removeSection(self: *@This()) void {
@@ -201,7 +323,7 @@ pub fn removeSection(self: *@This()) void {
 }
 
 // Precondition: shstrtab is located in sections at index e_shstrndx
-pub fn getSectionName(self: *const @This(), section: Section) []const u8 {
+pub fn getSectionName(self: *const @This(), section: *const Section) []const u8 {
     const shstrtab = self.sections.items[self.e_shstrndx];
     const string_table_content = shstrtab.content.data_allocated;
     if (section.header.sh_name >= string_table_content.len) fatal(
@@ -217,6 +339,11 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
 
     const writer = target.writer();
     const out_stream = target.seekableStream();
+
+    // TODO: write header in input file class, not native size
+    const output_64bit = if (self.e_ident.ei_class == .elfclass64) true else false;
+    _ = output_64bit;
+    const output_endianness = self.e_ident.ei_data;
 
     var header = std.elf.Ehdr{
         .e_ident = self.e_ident.toBuffer(),
@@ -235,8 +362,6 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
         .e_shstrndx = @intCast(self.e_shstrndx),
     };
 
-    const output_endianness = self.e_ident.ei_data;
-
     // convert endianness if output and native endianness do not match
     if (output_endianness != builtin.target.cpu.arch.endian()) std.mem.byteSwapAllFields(std.elf.Ehdr, &header);
 
@@ -244,18 +369,6 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     try writer.writeStruct(header);
 
     // TODO: perform validation that header, section header, program headers and section content regions don't overlap
-
-    // section headers
-    try out_stream.seekTo(self.e_shoff);
-    for (self.sections.items) |section| {
-        try writer.writeStruct(section.toShdr(output_endianness));
-    }
-
-    // program headers
-    try out_stream.seekTo(self.e_phoff);
-    for (self.program_segments.items) |program_segment| {
-        try writer.writeStruct(program_segment.program_header);
-    }
 
     // section content
     for (self.sections.items) |*section| {
@@ -267,6 +380,18 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
             },
             .no_bits => {},
         }
+    }
+
+    // program headers
+    try out_stream.seekTo(self.e_phoff);
+    for (self.program_segments.items) |program_segment| {
+        try writer.writeStruct(program_segment.program_header);
+    }
+
+    // section headers
+    try out_stream.seekTo(self.e_shoff);
+    for (self.sections.items) |section| {
+        try writer.writeStruct(section.toShdr(output_endianness));
     }
 }
 
@@ -409,8 +534,8 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     return try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
 }
 
-pub fn getSection(self: *const @This(), handle: Section.Handle) ?Section {
-    return for (self.sections.items) |section| {
+pub fn getSection(self: *const @This(), handle: Section.Handle) ?*Section {
+    return for (self.sections.items) |*section| {
         if (section.handle == handle) return section;
     } else null;
 }
@@ -440,6 +565,7 @@ test read {
         var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
         var elf = try read(allocator, &in_buffer_stream);
         defer elf.deinit();
+        try assertElf(&elf);
     }
 
     {
@@ -569,43 +695,66 @@ fn createTestElfBuffer() ![256]u8 {
 }
 
 test addSectionName {
-    // TODO: NYI
-    // const sections = Elf.Sections.init(t.allocator);
+    const allocator = t.allocator;
 
-    // var elf = Elf{
-    //     .section_handle_counter = 1,
-    //     .e_ident = .{
-    //         .ei_class = .elfclass64,
-    //         .ei_data = .little,
-    //         .ei_version = .ev_current,
-    //         .ei_osabi = std.elf.OSABI.NONE,
-    //         .ei_abiversion = 0,
-    //     },
-    //     .e_type = std.elf.ET.DYN,
-    //     .e_machine = std.elf.EM.X86_64,
-    //     .e_version = .ev_current,
-    //     .e_entry = 0x128,
-    //     .e_phoff = 64,
-    //     .e_shoff = 800,
-    //     .e_flags = 0,
-    //     .e_ehsize = @sizeOf(std.elf.Ehdr),
-    //     .e_phentsize = @sizeOf(std.elf.Phdr),
-    //     .e_phnum = 0,
-    //     .e_shentsize = @sizeOf(std.elf.Shdr),
-    //     .e_shnum = 2,
-    //     .e_shstrndx = 1,
-    //     .sections = sections,
-    //     .program_segments = Elf.ProgramSegments.init(t.allocator),
-    //     .allocator = t.allocator,
-    // };
+    var in_buffer = try createTestElfBuffer();
+    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var elf = try read(allocator, &in_buffer_stream);
+    defer elf.deinit();
 
-    // try sections.append(.{
-    //     .handle = elf.getNextSectionHandle(),
-    //     .header = .{},
-    //     .content = "",
-    //     .name = ".shstrtab",
-    // });
+    const old_size = elf.sections.items[elf.e_shstrndx].header.sh_size;
 
-    // const name_index = try elf.addSectionName(".new_section");
-    // _ = name_index;
+    const new_name = ".new_section";
+    const name_index = try elf.addSectionName(&in_buffer_stream, new_name);
+    try t.expectEqual(old_size, name_index);
+
+    const new_size = elf.sections.items[elf.e_shstrndx].header.sh_size;
+    try t.expectEqual(old_size + new_name.len + 1, new_size); // + 1 for 0 sentinel in front of new name
+
+    try assertElf(&elf);
+}
+
+test addSection {
+    const allocator = t.allocator;
+
+    var in_buffer = try createTestElfBuffer();
+    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var elf = try read(allocator, &in_buffer_stream);
+    defer elf.deinit();
+
+    const last_section = &elf.sections.items[elf.sections.items.len - 1];
+    const old_section_count = elf.sections.items.len;
+
+    try elf.addSection(&in_buffer_stream, ".abc", "content");
+    try t.expectEqual(old_section_count + 1, elf.sections.items.len);
+
+    const new = &elf.sections.items[elf.sections.items.len - 1];
+    try t.expectEqual(last_section.header.sh_offset + last_section.header.sh_size, new.header.sh_offset);
+
+    try assertElf(&elf);
+}
+
+// internal runtime checks that to be executed in debug mode after modifications
+fn assertElf(elf: *const Elf) !void {
+    // TODO: report errors in more readable way
+    try t.expectEqual(elf.e_version, .ev_current);
+    try t.expectEqual(elf.e_ident.ei_version, .ev_current);
+    try t.expect(elf.e_shstrndx != 0);
+    try t.expectEqual(elf.e_flags, 0);
+    // FIXME: not true for 32bit file on 64bit native system
+    try t.expectEqual(elf.e_shentsize, @sizeOf(std.elf.Shdr));
+    try t.expectEqual(elf.e_phentsize, @sizeOf(std.elf.Phdr));
+    try t.expectEqual(elf.e_shnum, elf.sections.items.len);
+    try t.expectEqual(elf.e_phnum, elf.program_segments.items.len);
+
+    for (elf.sections.items) |section| {
+        const file_size = switch (section.content) {
+            .data, .data_allocated => |data| data.len,
+            .no_bits => 0,
+            .input_file_range => |range| range.size,
+        };
+        try t.expectEqual(section.header.sh_size, file_size);
+    }
+
+    // TODO: check for section and header overlap, see fixup function
 }

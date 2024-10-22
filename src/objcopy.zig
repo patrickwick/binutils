@@ -42,18 +42,20 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     );
     defer out_file.close();
 
-    // TODO: apply options
+    // --add-section
     if (options.add_section) |add_section| {
         var add_section_input = std.fs.cwd().openFile(add_section.file_path, .{}) catch |err| fatal(
             "unable to open add-section input '{s}': {s}",
             .{ options.in_file_path, @errorName(err) },
         );
         defer add_section_input.close();
+
         const content = add_section_input.readToEndAlloc(allocator, std.math.maxInt(usize)) catch |err| fatal(
             "failed reading add-sectipn input '{s}': {s}",
             .{ options.in_file_path, @errorName(err) },
         );
         defer allocator.free(content);
+
         elf.addSection(in_file, add_section.section_name, content) catch |err| fatal(
             "failed adding new section '{s}': {s}",
             .{ add_section.section_name, @errorName(err) },

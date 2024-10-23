@@ -9,8 +9,46 @@ const FATAL_EXIT_CODE = 1;
 pub const ObjCopyOptions = struct {
     in_file_path: []const u8,
     out_file_path: []const u8,
-    add_section: ?AddSectionOption = null,
+    output_target: OutputTarget = .elf,
     only_section: ?OnlySectionOption = null,
+    pad_to: ?PadToOption = null,
+    strip_debug: bool = false,
+    strip_all: bool = false,
+    only_keep_debug: bool = false,
+    add_gnu_debuglink: ?AddGnuDebugLinkOption = null,
+    extract_to: ?ExtractToOption = null,
+    compress_debug_sections: bool = false,
+    set_section_alignment: ?SetSectionAlignmentOption = null,
+    set_section_flags: ?SetSectionFlagsOption = null,
+    add_section: ?AddSectionOption = null,
+};
+
+pub const OutputTarget = enum {
+    elf,
+    raw,
+    hex,
+};
+
+pub const PadToOption = struct {
+    address: u64,
+};
+
+pub const AddGnuDebugLinkOption = struct {
+    link: []const u8,
+};
+
+pub const ExtractToOption = struct {
+    target_path: []const u8,
+};
+
+pub const SetSectionFlagsOption = struct {
+    section_name: []const u8,
+    flags: usize, // TODO: add packed struct
+};
+
+pub const SetSectionAlignmentOption = struct {
+    section_name: []const u8,
+    alignment: usize,
 };
 
 pub const AddSectionOption = struct {

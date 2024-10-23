@@ -140,8 +140,19 @@ fn parseObjDump(out: std.io.AnyWriter, args: []const []const u8) objdump.ObjDump
 fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopyOptions {
     var in_file_path: ?[]const u8 = null;
     var out_file_path: ?[]const u8 = null;
-    var add_section: ?objcopy.AddSectionOption = null;
+
+    var output_target: objcopy.OutputTarget = .elf;
     var only_section: ?objcopy.OnlySectionOption = null;
+    var pad_to: ?objcopy.PadToOption = null;
+    var strip_debug: bool = false;
+    var strip_all: bool = false;
+    var only_keep_debug: bool = false;
+    var add_gnu_debuglink: ?objcopy.AddGnuDebugLinkOption = null;
+    var extract_to: ?objcopy.ExtractToOption = null;
+    var compress_debug_sections: bool = false;
+    var set_section_alignment: ?objcopy.SetSectionAlignmentOption = null;
+    var set_section_flags: ?objcopy.SetSectionFlagsOption = null;
+    var add_section: ?objcopy.AddSectionOption = null;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -149,20 +160,48 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
         if (arg.len == 0) continue;
         if (arg[0] == '-') {
             if (arg.len > 1 and arg[1] == '-') {
-                // TODO: --help => print usage and exit
+                //  --help
+                if (std.mem.eql(u8, arg, "--help")) {
+                    out.writeAll(OBJCOPY_USAGE) catch std.process.exit(1);
+                    std.process.exit(0);
+                }
 
-                // --add-section <name>=<file>
-                if (std.mem.eql(u8, arg, "--add-section")) {
+                // --output-target=<value>
+                if (std.mem.startsWith(u8, arg, "--output-target")) {
+                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized argument: '{s}', expecting --output-target=<value>",
+                        .{arg},
+                    );
+                    _ = split;
+                    output_target = .elf; // TODO: parse
+                    continue;
+                }
+
+                // --pad-to <addr>
+                if (std.mem.eql(u8, arg, "--pad-to")) {
                     if (args.len > i + 1) {
                         defer i += 1;
                         const opt = args[i + 1];
-                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                        const address = std.fmt.parseInt(usize, opt, 10) catch fatalPrintUsageObjCopy(
                             out,
-                            "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
-                            .{ arg, opt },
+                            "unrecognized argument: '{s}', expecting --pad-to <addr>",
+                            .{arg},
                         );
-                        add_section = .{ .section_name = split.first, .file_path = split.second };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-section <name>=<flags>", .{arg});
+                        pad_to = .{ .address = address };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --pad-to <addr>", .{arg});
+                    continue;
+                }
+
+                // --strip-debug
+                if (std.mem.eql(u8, arg, "--strip-debug")) {
+                    strip_debug = true;
+                    continue;
+                }
+
+                // --strip-all
+                if (std.mem.eql(u8, arg, "--strip-all")) {
+                    strip_all = true;
                     continue;
                 }
 
@@ -176,16 +215,112 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                     only_section = .{ .section_name = split.second };
                     continue;
                 }
+
+                // --only-keep-debug
+                if (std.mem.eql(u8, arg, "--only-keep-debug")) {
+                    only_keep_debug = true;
+                    continue;
+                }
+
+                // --add-gnu-debuglink=<file>
+                if (std.mem.eql(u8, arg, "--add-gnu-debuglink")) {
+                    if (args.len > i + 1) {
+                        defer i += 1;
+                        const opt = args[i + 1];
+                        add_gnu_debuglink = .{ .link = opt };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-gnu-debuglink <file>", .{arg});
+                    continue;
+                }
+
+                // --extract-to <file>
+                if (std.mem.eql(u8, arg, "--extract-to")) {
+                    if (args.len > i + 1) {
+                        defer i += 1;
+                        const opt = args[i + 1];
+                        extract_to = .{ .target_path = opt };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --extract-to <file>", .{arg});
+                    continue;
+                }
+
+                // --compress-debug-sections
+                if (std.mem.eql(u8, arg, "--compress-debug-sections")) {
+                    compress_debug_sections = true;
+                    continue;
+                }
+
+                // --set-section-alignment <name>=<align>
+                if (std.mem.eql(u8, arg, "--set-section-alignment")) {
+                    if (args.len > i + 1) {
+                        defer i += 1;
+                        const opt = args[i + 1];
+                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                            out,
+                            "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
+                            .{ arg, opt },
+                        );
+                        const alignment = 8; // TODO: parse
+                        set_section_alignment = .{ .section_name = split.first, .alignment = alignment };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<flags>", .{arg});
+                    continue;
+                }
+
+                // --set-section-flags <name>=<flags>
+                if (std.mem.eql(u8, arg, "--set-section-flags")) {
+                    if (args.len > i + 1) {
+                        defer i += 1;
+                        const opt = args[i + 1];
+                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                            out,
+                            "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
+                            .{ arg, opt },
+                        );
+                        const flags = 0; // TODO: parse flags
+                        set_section_flags = .{ .section_name = split.first, .flags = flags };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-flags <name>=<flags>", .{arg});
+                    continue;
+                }
+
+                // --add-section <name>=<file>
+                if (std.mem.eql(u8, arg, "--add-section")) {
+                    if (args.len > i + 1) {
+                        defer i += 1;
+                        const opt = args[i + 1];
+                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                            out,
+                            "unrecognized {s} argument: '{s}', expecting <name>=<file>",
+                            .{ arg, opt },
+                        );
+                        add_section = .{ .section_name = split.first, .file_path = split.second };
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-section <name>=<file>", .{arg});
+                    continue;
+                }
             } else {
+                if (arg[1] == 'O') {
+                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized argument: '{s}', expecting --output-target=<value>",
+                        .{arg},
+                    );
+                    _ = split;
+                    output_target = .elf; // TODO: parse
+                    continue;
+                }
+
                 // single dash args allow 0 to n options
                 for (arg[1..]) |c| {
                     switch (c) {
+                        'h' => {
+                            out.writeAll(OBJCOPY_USAGE) catch std.process.exit(1);
+                            std.process.exit(0);
+                        },
                         'j' => {
                             if (args.len > i + 1) {
                                 i += 1;
                                 only_section = .{ .section_name = args[i] };
                             } else fatalPrintUsageObjCopy(out, "unrecognized -j argument, expecting -j <section>", .{});
                         },
+                        'g' => strip_debug = true,
+                        'S' => strip_all = true,
                         else => fatalPrintUsageObjCopy(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
                     }
                 }
@@ -264,52 +399,58 @@ fn fatalPrintUsageReadElf(out: std.io.AnyWriter, comptime format: []const u8, ar
     std.process.exit(FATAL_EXIT_CODE);
 }
 
+const OBJCOPY_USAGE =
+    \\Usage: binutils objcopy [options] in-file out-file
+    \\
+    \\Options:
+    \\
+    \\  -O <value>, --output-target=<value>
+    \\      Format of the output file.
+    \\
+    \\  -j <section>, --only-section=<section>
+    \\      Remove all sections except <section> and the section name table section (.shstrtab).
+    \\
+    \\  --pad-to <addr>
+    \\      Pad the last section up to address <addr>.
+    \\
+    \\  -g, strip-debug
+    \\      Remove all debug sections from the output.
+    \\
+    \\  -S, --strip-all
+    \\      Remove all debug sections and symbol table from the output.
+    \\
+    \\  --only-keep-debug
+    \\      Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact.
+    \\
+    \\  --add-gnu-debuglink=<file>
+    \\      Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
+    \\
+    \\  --extract-to <file>
+    \\      Extract the removed sections into <file>, and add a .gnu-debuglink section.
+    \\
+    \\  --compress-debug-sections
+    \\      Compress DWARF debug sections with zlib
+    \\
+    \\  --set-section-alignment <name>=<align>
+    \\      Set alignment of section <name> to <align> bytes. Must be a power of two.
+    \\
+    \\  --set-section-flags <name>=<flags>
+    \\      Set flags of section <name> to <flags> represented as a comma separated set of flags.
+    \\
+    \\  --add-section <name>=<file>
+    \\      Add file content from <file> with the a new section named <name>.
+    \\
+    \\General Options:
+    \\
+    \\  -h, --help
+    \\      Print command-specific usage
+    \\
+;
+
 fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
-    const usage =
-        \\Usage: binutils objcopy [options] in-file out-file
-        \\
-        \\Options:
-        \\
-        \\  -j <section>, --only-section=<section>
-        \\      Remove all sections except <section> and the section name table section (.shstrtab)
-        \\
-        \\  --add-section <name>=<file>
-        \\      Add file content from <file> with the a new section named <name>.
-        \\
-        \\General Options:
-        \\
-        \\  -h, --help
-        \\      Print command-specific usage
-        \\
-    ;
-
-    // TODO: achieve current zig objcopy 0.14.0-dev.1904+e2e79960d functionality:
-    // Usage: zig objcopy [options] input output
-    //
-    // Options:
-    //   -h, --help                              Print this help and exit
-    //   --output-target=<value>                 Format of the output file
-    //   -O <value>                              Alias for --output-target
-    //   --only-section=<section>                Remove all but <section>
-    //   -j <value>                              Alias for --only-section
-    //   --pad-to <addr>                         Pad the last section up to address <addr>
-    //   --strip-debug, -g                       Remove all debug sections from the output.
-    //   --strip-all, -S                         Remove all debug sections and symbol table from the output.
-    //   --only-keep-debug                       Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact.
-    //   --add-gnu-debuglink=<file>              Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
-    //   --extract-to <file>                     Extract the removed sections into <file>, and add a .gnu-debuglink section.
-    //   --compress-debug-sections               Compress DWARF debug sections with zlib
-    //   --set-section-alignment <name>=<align>  Set alignment of section <name> to <align> bytes. Must be a power of two.
-    //   --set-section-flags <name>=<file>       Set flags of section <name> to <flags> represented as a comma separated set of flags.
-    //   --add-section <name>=<file>             Add file content from <file> with the a new section named <name>.
-    //
-    // NOTE: these options are not supported for ELF to ELF copying:
-    // if (options.only_section) |_| fatal("zig objcopy: ELF to ELF copying does not support --only-section", .{});
-    // if (options.pad_to) |_| fatal("zig objcopy: ELF to ELF copying does not support --pad-to", .{});
-
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
-    out.writeAll(usage) catch @panic("failed printing usage");
+    out.writeAll(OBJCOPY_USAGE) catch @panic("failed printing usage");
     std.process.exit(FATAL_EXIT_CODE);
 }
 

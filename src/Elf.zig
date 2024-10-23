@@ -550,6 +550,7 @@ pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
 
     // TODO: update shstrtab => remove name
     // TODO: update sh_name for removed name
+    // TODO: remove section links to the removed section
 
     try self.fixup();
 }

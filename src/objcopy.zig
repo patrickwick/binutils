@@ -126,6 +126,21 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         }
     }
 
+    // --set-section-alignment
+    if (options.set_section_alignment) |set_section_alignment| {
+        if (!std.math.isPowerOfTwo(set_section_alignment.alignment)) {
+            fatal("section alignment must be a power of two, got {d}", .{set_section_alignment.alignment});
+        }
+
+        const section = for (elf.sections.items) |*section| {
+            const name = elf.getSectionName(section);
+            if (std.mem.eql(u8, name, set_section_alignment.section_name)) break section;
+        } else fatal("uknown section '{s}'", .{set_section_alignment.section_name});
+
+        section.header.sh_addralign = @intCast(set_section_alignment.alignment);
+        elf.fixup() catch |err| fatal("failed overwriting section alignemnt: {s}", .{@errorName(err)});
+    }
+
     elf.write(allocator, in_file, out_file) catch |err| fatal(
         "failed writing output '{s}': {s}",
         .{ options.out_file_path, @errorName(err) },

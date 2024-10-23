@@ -259,7 +259,7 @@ pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
 
 // TODO: critical function => must be well tested
 // TODO: add markdown documentation on what variants need to hold and are violated by which operation?
-fn fixup(self: *@This()) !void {
+pub fn fixup(self: *@This()) !void {
     // relocate headers and sections contents due to size increase if needed
     var sorted_sections = try self.sections.clone();
     defer sorted_sections.deinit();

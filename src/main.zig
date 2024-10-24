@@ -259,12 +259,16 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                         const opt = args[i + 1];
                         const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
                             out,
-                            "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
+                            "unrecognized {s} argument: '{s}', expecting <name>=<alignment>",
                             .{ arg, opt },
                         );
-                        const alignment = 8; // TODO: parse
+                        const alignment = std.fmt.parseInt(usize, split.second, 10) catch fatalPrintUsageObjCopy(
+                            out,
+                            "unrecognized argument: '{s}', expecting decimal alignment number argument",
+                            .{arg},
+                        );
                         set_section_alignment = .{ .section_name = split.first, .alignment = alignment };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<flags>", .{arg});
+                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<alignment>", .{arg});
                     continue;
                 }
 
@@ -711,10 +715,54 @@ test parseObjCopy {
     const writer = std.io.null_writer.any();
 
     // positional argument
-    try t.expectEqualDeep(
-        objcopy.ObjCopyOptions{ .in_file_path = "./in", .out_file_path = "./out" },
-        parseObjCopy(writer, &.{ "./in", "./out" }),
-    );
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+    }, parseObjCopy(writer, &.{ "./in", "./out" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .strip_debug = true,
+    }, parseObjCopy(writer, &.{ "./in", "./out", "-g" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .strip_all = true,
+    }, parseObjCopy(writer, &.{ "./in", "./out", "-S" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        // TODO: does it make sense to allow both at the same time?
+        .strip_debug = true,
+        .strip_all = true,
+    }, parseObjCopy(writer, &.{ "./in", "./out", "-gS" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .strip_debug = true,
+    }, parseObjCopy(writer, &.{ "./in", "./out", "--strip-debug" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .strip_all = true,
+    }, parseObjCopy(writer, &.{ "./in", "./out", "--strip-all" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .set_section_alignment = .{ .section_name = ".abc", .alignment = 128 },
+    }, parseObjCopy(writer, &.{ "./in", "./out", "--set-section-alignment", ".abc=128" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .set_section_flags = .{ .section_name = ".abc", .flags = .{ .data = true, .readonly = true } },
+    }, parseObjCopy(writer, &.{ "./in", "./out", "--set-section-flags", ".abc=data,readonly" }));
 }
 
 test "parseObjCopy fatal errors" {

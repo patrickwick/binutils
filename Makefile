@@ -57,13 +57,16 @@ objcopy-only-section: ./reproduction/ls
 objcopy-pad-to-small: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_pad_to_small --pad-to 100
 	zig build run -- readelf ./reproduction/ls_objcopy_pad_to_small -hSl
+	./reproduction/ls_objcopy_pad_to_small
 
 .PHONY: objcopy-pad-to
 objcopy-pad-to: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_pad_to --pad-to 200000
-	zig build run -- readelf ./reproduction/ls_objcopy_set_section_flags -hSl
+	zig build run -- readelf ./reproduction/ls_objcopy_pad_to -hSl
+	./reproduction/ls_objcopy_pad_to
 
 .PHONY: objcopy-set-section-flags
 objcopy-set-section-flags: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_set_section_flags --set-section-flags .text=alloc,load,readonly,code
 	zig build run -- readelf ./reproduction/ls_objcopy_set_section_flags -hSl
+	./reproduction/ls_objcopy_set_section_flags

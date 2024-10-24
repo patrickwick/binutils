@@ -152,9 +152,6 @@ pub const Section = struct {
 pub const ProgramSegment = struct {
     pub const SegmentMapping = std.ArrayList(Section.Handle);
 
-    // TODO: temporary copy of the input
-    // => represent section to segment mapping via handles and create
-    // the offset only when writing, so data does not go out of sync
     program_header: std.elf.Phdr,
 
     /// Section to segment mapping. A segment can reference 0 to n sections.
@@ -601,8 +598,6 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     try out_stream.seekTo(0);
     try writer.writeStruct(header);
 
-    // TODO: perform validation that header, section header, program headers and section content regions don't overlap
-
     // section content
     for (self.sections.items) |*section| {
         switch (section.content) {
@@ -610,6 +605,10 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
                 const data = try section.readContent(source, allocator);
                 try out_stream.seekTo(section.header.sh_offset);
                 try writer.writeAll(data);
+
+                if (section.header.sh_size > data.len) {
+                    try writer.writeByteNTimes(0, section.header.sh_size - data.len);
+                }
             },
             .no_bits => {},
         }

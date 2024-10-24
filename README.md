@@ -3,8 +3,6 @@
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
 
-I may create a PR to zig **if** this turns out to be worthy to be reviewed.
-
 Zig objcopy currently has strict limitations:
 
 * all input file sections must be ordered ascending by file offsets

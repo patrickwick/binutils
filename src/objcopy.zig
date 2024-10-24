@@ -42,8 +42,25 @@ pub const ExtractToOption = struct {
 };
 
 pub const SetSectionFlagsOption = struct {
+    pub const SectionFlags = packed struct {
+        alloc: bool = false,
+        contents: bool = false,
+        load: bool = false,
+        noload: bool = false,
+        readonly: bool = false,
+        code: bool = false,
+        data: bool = false,
+        rom: bool = false,
+        exclude: bool = false,
+        shared: bool = false,
+        debug: bool = false,
+        large: bool = false,
+        merge: bool = false,
+        strings: bool = false,
+    };
+
     section_name: []const u8,
-    flags: usize, // TODO: add packed struct
+    flags: SectionFlags,
 };
 
 pub const SetSectionAlignmentOption = struct {
@@ -136,8 +153,8 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         const section = &sorted.items[sorted.items.len - 1];
         const end = section.header.sh_offset + section.header.sh_size;
         if (pad_to.address > end) {
-            // FIXME: probably off by one
             section.header.sh_size += pad_to.address - end;
+            elf.fixup() catch |err| fatal("failed increasing section size: {s}", .{@errorName(err)});
         } else {
             std.log.info("section end 0x{x} already exceeds address 0x{x}", .{ end, pad_to.address });
         }
@@ -189,13 +206,48 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     }
 
     // --set-section-flags
-    if (options.set_section_alignment) |set_section_alignment| {
-        const section = for (elf.sections.items) |*section| {
+    if (options.set_section_flags) |set_section_flags| {
+        const s = for (elf.sections.items) |*section| {
             const name = elf.getSectionName(section);
-            if (std.mem.eql(u8, name, set_section_alignment.section_name)) break section;
-        } else fatal("uknown section '{s}'", .{set_section_alignment.section_name});
+            if (std.mem.eql(u8, name, set_section_flags.section_name)) break section;
+        } else fatal("uknown section '{s}'", .{set_section_flags.section_name});
 
-        section.header.sh_flags = 0; // TODO
+        const f = set_section_flags.flags;
+        s.header.sh_flags = std.elf.SHF_WRITE; // default is writable cleared by "readonly"
+
+        // Supporting a subset of GNU and LLVM objcopy for ELF only
+        // GNU:
+        // alloc: add SHF_ALLOC
+        // contents: if section is SHT_NOBITS, set SHT_PROGBITS, otherwise do nothing
+        // load: if section is SHT_NOBITS, set SHT_PROGBITS, otherwise do nothing (same as contents)
+        // noload: not ELF relevant
+        // readonly: clear default SHF_WRITE flag
+        // code: add SHF_EXECINSTR
+        // data: not ELF relevant
+        // rom: ignored
+        // exclude: add SHF_EXCLUDE
+        // share: not ELF relevant
+        // debug: not ELF relevant
+        // large: add SHF_X86_64_LARGE. Fatal error if target is not x86_64
+        if (f.alloc) s.header.sh_flags |= std.elf.SHF_ALLOC;
+        if (f.contents or f.load) {
+            if (s.header.sh_type == std.elf.SHT_NOBITS) s.header.sh_type = std.elf.SHT_PROGBITS;
+        }
+        if (f.readonly) s.header.sh_flags &= ~@as(@TypeOf(s.header.sh_type), std.elf.SHF_WRITE);
+        if (f.code) s.header.sh_flags |= std.elf.SHF_EXECINSTR;
+        if (f.exclude) s.header.sh_flags |= std.elf.SHF_EXCLUDE;
+        if (f.large) {
+            if (elf.e_machine != std.elf.EM.X86_64)
+                fatal("zig objcopy: 'large' section flag is only supported on x86_64 targets", .{});
+            s.header.sh_flags |= std.elf.SHF_X86_64_LARGE;
+        }
+
+        // LLVM:
+        // merge: add SHF_MERGE
+        // strings: add SHF_STRINGS
+        if (f.merge) s.header.sh_flags |= std.elf.SHF_MERGE;
+        if (f.strings) s.header.sh_flags |= std.elf.SHF_STRINGS;
+
         elf.fixup() catch |err| fatal("failed overwriting section flags: {s}", .{@errorName(err)});
     }
 

@@ -74,7 +74,10 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
         if (arg.len == 0) continue;
         if (arg[0] == '-') {
             if (arg.len > 1 and arg[1] == '-') {
-                // TODO: --help => print usage and exit
+                if (std.mem.eql(u8, arg, "--help")) {
+                    out.writeAll(READELF_USAGE) catch @panic("failed printing usage");
+                    std.process.exit(0);
+                }
 
                 if (std.mem.eql(u8, arg, "--file-header")) {
                     file_header = true;
@@ -275,8 +278,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                             "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
                             .{ arg, opt },
                         );
-                        const flags = 0; // TODO: parse flags
-                        set_section_flags = .{ .section_name = split.first, .flags = flags };
+                        set_section_flags = .{ .section_name = split.first, .flags = parseSectionFlags(split.second) };
                     } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-flags <name>=<flags>", .{arg});
                     continue;
                 }
@@ -382,31 +384,31 @@ fn fatalPrintUsage(out: std.io.AnyWriter, comptime format: []const u8, args: any
     std.process.exit(FATAL_EXIT_CODE);
 }
 
-fn fatalPrintUsageReadElf(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
-    const usage =
-        \\Usage: binutils readelf [options] elf-file
-        \\
-        \\Options:
-        \\
-        \\  -h, --file-headers     
-        \\      Display file headers.
-        \\
-        \\  -S, --section-headers
-        \\      Display section headers.
-        \\
-        \\  -l, --program-headers, segments
-        \\      Display program headers.
-        \\
-        \\General Options:
-        \\
-        \\  --help
-        \\      Print command-specific usage
-        \\
-    ;
+const READELF_USAGE =
+    \\Usage: binutils readelf [options] elf-file
+    \\
+    \\Options:
+    \\
+    \\  -h, --file-headers
+    \\      Display file headers.
+    \\
+    \\  -S, --section-headers
+    \\      Display section headers.
+    \\
+    \\  -l, --program-headers, segments
+    \\      Display program headers.
+    \\
+    \\General Options:
+    \\
+    \\  --help
+    \\      Print command-specific usage
+    \\
+;
 
+fn fatalPrintUsageReadElf(out: std.io.AnyWriter, comptime format: []const u8, args: anytype) noreturn {
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
-    out.writeAll(usage) catch @panic("failed printing usage");
+    out.writeAll(READELF_USAGE) catch @panic("failed printing usage");
     std.process.exit(FATAL_EXIT_CODE);
 }
 
@@ -465,26 +467,9 @@ fn fatalPrintUsageObjCopy(out: std.io.AnyWriter, comptime format: []const u8, ar
     std.process.exit(FATAL_EXIT_CODE);
 }
 
-const SectionFlags = packed struct {
-    alloc: bool = false,
-    contents: bool = false,
-    load: bool = false,
-    noload: bool = false,
-    readonly: bool = false,
-    code: bool = false,
-    data: bool = false,
-    rom: bool = false,
-    exclude: bool = false,
-    shared: bool = false,
-    debug: bool = false,
-    large: bool = false,
-    merge: bool = false,
-    strings: bool = false,
-};
-
-fn parseSectionFlags(comma_separated_flags: []const u8) SectionFlags {
+fn parseSectionFlags(comma_separated_flags: []const u8) objcopy.SetSectionFlagsOption.SectionFlags {
     const P = struct {
-        fn parse(flags: *SectionFlags, string: []const u8) void {
+        fn parse(flags: *objcopy.SetSectionFlagsOption.SectionFlags, string: []const u8) void {
             if (string.len == 0) return;
 
             if (std.mem.eql(u8, string, "alloc")) {
@@ -521,7 +506,7 @@ fn parseSectionFlags(comma_separated_flags: []const u8) SectionFlags {
         }
     };
 
-    var flags = SectionFlags{};
+    var flags = objcopy.SetSectionFlagsOption.SectionFlags{};
     var offset: usize = 0;
     for (comma_separated_flags, 0..) |c, i| {
         if (c == ',') {
@@ -551,7 +536,7 @@ fn splitOption(option: []const u8) ?SplitResult {
 const t = std.testing;
 
 test "Parse section flags" {
-    const F = SectionFlags;
+    const F = objcopy.SetSectionFlagsOption.SectionFlags;
     try t.expectEqual(F{}, parseSectionFlags(""));
     try t.expectEqual(F{}, parseSectionFlags(","));
     try t.expectEqual(F{}, parseSectionFlags("abc"));

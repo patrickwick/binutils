@@ -34,6 +34,4 @@ pub fn build(b: *std.Build) void {
 
     // TODO: create additional integration test target that creates test executables and libraries to run binutils on.
     // * run current zig objcopy to ensure no breaking changes on ELF files that zig objcopy copy currently supports
-
-    // TODO: could add fuzz tests in future to create random valid ELF files and commands to be executed
 }

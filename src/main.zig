@@ -99,6 +99,13 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
                     continue;
                 }
 
+                if (std.mem.eql(u8, arg, "--headers")) {
+                    file_header = true;
+                    section_headers = true;
+                    program_headers = true;
+                    continue;
+                }
+
                 if (std.mem.eql(u8, arg, "--segments")) {
                     program_headers = true;
                     continue;
@@ -110,6 +117,11 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
                         'h' => file_header = true,
                         'S' => section_headers = true,
                         'l' => program_headers = true,
+                        'e' => {
+                            file_header = true;
+                            section_headers = true;
+                            program_headers = true;
+                        },
                         else => fatalPrintUsageReadElf(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
                     }
                 }
@@ -402,6 +414,12 @@ const READELF_USAGE =
     \\  -l, --program-headers, segments
     \\      Display program headers.
     \\
+    \\  -e, --headers
+    \\      Display file, section and program headers. Equivalent to -S -h -l.
+    \\
+    \\  -s, --symbols, syms
+    \\      Display the symbol table.
+    \\
     \\General Options:
     \\
     \\  --help
@@ -593,92 +611,121 @@ test parseReadElf {
     const writer = std.io.null_writer.any();
 
     // positional argument
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file" },
-        parseReadElf(writer, &.{"./file"}),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadElf(writer, &.{ "--file-header", "./file" }),
-    );
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+    }, parseReadElf(writer, &.{"./file"}));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+    }, parseReadElf(writer, &.{ "--file-header", "./file" }));
 
     // double dash options
     try t.expectEqualDeep(
         readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
         parseReadElf(writer, &.{ "./file", "--file-header" }),
     );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadElf(writer, &.{ "./file", "--file-header", "--file-header" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .section_headers = true },
-        parseReadElf(writer, &.{ "./file", "--section-headers" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .section_headers = true },
-        parseReadElf(writer, &.{ "./file", "--sections" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .program_headers = true },
-        parseReadElf(writer, &.{ "./file", "--program-headers" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .program_headers = true },
-        parseReadElf(writer, &.{ "./file", "--segments" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{
-            .file_path = "./file",
-            .file_header = true,
-            .section_headers = true,
-            .program_headers = true,
-        },
-        parseReadElf(writer, &.{ "./file", "--file-header", "--section-headers", "--program-headers" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{
-            .file_path = "./file",
-            .file_header = true,
-            .section_headers = true,
-            .program_headers = true,
-        },
-        parseReadElf(writer, &.{ "./file", "--file-header", "--section-headers", "--sections", "--program-headers", "--segments" }),
-    );
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+    }, parseReadElf(writer, &.{ "./file", "--file-header", "--file-header" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .section_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--section-headers" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .section_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--sections" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--program-headers" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--segments" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--headers" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--file-header", "--section-headers", "--program-headers" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "--file-header", "--section-headers", "--sections", "--program-headers", "--segments" }));
 
     // single dash options
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadElf(writer, &.{ "./file", "-h" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .section_headers = true },
-        parseReadElf(writer, &.{ "./file", "-S" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .program_headers = true },
-        parseReadElf(writer, &.{ "./file", "-l" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .file_header = true, .section_headers = true, .program_headers = true },
-        parseReadElf(writer, &.{ "./file", "-Shl" }),
-    );
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+    }, parseReadElf(writer, &.{ "./file", "-h" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .section_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "-S" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "-l" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "-e" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "-Shl" }));
 
     // multiple single dash options
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .file_header = true, .section_headers = true, .program_headers = true },
-        parseReadElf(writer, &.{ "./file", "-S", "-h", "-l" }),
-    );
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "-S", "-h", "-l" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+        .section_headers = true,
+        .program_headers = true,
+    }, parseReadElf(writer, &.{ "./file", "-eSSSSSSSSSSSSS" }));
 
     // dashes without flags
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file" },
-        parseReadElf(writer, &.{ "./file", "-" }),
-    );
-    try t.expectEqualDeep(
-        readelf.ReadElfOptions{ .file_path = "./file", .file_header = true },
-        parseReadElf(writer, &.{ "./file", "-", "-h" }),
-    );
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+    }, parseReadElf(writer, &.{ "./file", "-" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .file_header = true,
+    }, parseReadElf(writer, &.{ "./file", "-", "-h" }));
 }
 
 test "parseReadElf fatal errors" {

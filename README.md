@@ -35,6 +35,12 @@ Options:
   -l, --program-headers, segments
       Display program headers.
 
+  -e, --headers
+      Display file, section and program headers. Equivalent to -S -h -l.
+
+  -s, --symbols, syms
+      Display the symbol table.
+
 General Options:
 
   --help

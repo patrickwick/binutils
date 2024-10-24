@@ -10,6 +10,7 @@ pub const ReadElfOptions = struct {
     file_header: bool = false,
     section_headers: bool = false,
     program_headers: bool = false,
+    symbols: bool = false,
 };
 
 pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
@@ -21,9 +22,16 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
     var elf = Elf.read(allocator, file) catch |err| fatal("failed reading ELF file '{s}': {s}", .{ options.file_path, @errorName(err) });
     defer elf.deinit();
 
-    if (options.file_header) printElfHeader(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
-    if (options.section_headers) printElfSectionHeaders(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
-    if (options.program_headers) printElfProgramHeaders(out.writer().any(), &elf) catch |err| fatal("failed writing to output: {s}", .{@errorName(err)});
+    if (options.file_header) printElfHeader(out.writer().any(), &elf) catch |err| fatal("failed printing ELF header: {s}", .{@errorName(err)});
+    if (options.section_headers) printElfSectionHeaders(out.writer().any(), &elf) catch |err| fatal("failed printing ELF section headers: {s}", .{@errorName(err)});
+    if (options.program_headers) printElfProgramHeaders(out.writer().any(), &elf) catch |err| fatal("failed printing program headers: {s}", .{@errorName(err)});
+    if (options.symbols) printSymbols(out.writer().any(), &elf) catch |err| fatal("failed printing symbol table: {s}", .{@errorName(err)});
+}
+
+fn printSymbols(out: std.io.AnyWriter, elf: *const Elf) !void {
+    // TODO
+    _ = elf;
+    _ = out;
 }
 
 fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {

@@ -69,6 +69,7 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
     var file_header = false;
     var section_headers = false;
     var program_headers = false;
+    var symbols = false;
 
     for (args) |arg| {
         if (arg.len == 0) continue;
@@ -110,6 +111,11 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
                     program_headers = true;
                     continue;
                 }
+
+                if (std.mem.eql(u8, arg, "--symbols") or std.mem.eql(u8, arg, "--syms")) {
+                    symbols = true;
+                    continue;
+                }
             } else {
                 // single dash args allow 0 to n options
                 for (arg[1..]) |c| {
@@ -122,6 +128,7 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
                             section_headers = true;
                             program_headers = true;
                         },
+                        's' => symbols = true,
                         else => fatalPrintUsageReadElf(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
                     }
                 }
@@ -143,6 +150,7 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
         .file_header = file_header,
         .section_headers = section_headers,
         .program_headers = program_headers,
+        .symbols = symbols,
     };
 }
 
@@ -660,6 +668,16 @@ test parseReadElf {
 
     try t.expectEqualDeep(readelf.ReadElfOptions{
         .file_path = "./file",
+        .symbols = true,
+    }, parseReadElf(writer, &.{ "./file", "--symbols" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .symbols = true,
+    }, parseReadElf(writer, &.{ "./file", "--syms" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
         .file_header = true,
         .section_headers = true,
         .program_headers = true,
@@ -694,6 +712,11 @@ test parseReadElf {
         .section_headers = true,
         .program_headers = true,
     }, parseReadElf(writer, &.{ "./file", "-e" }));
+
+    try t.expectEqualDeep(readelf.ReadElfOptions{
+        .file_path = "./file",
+        .symbols = true,
+    }, parseReadElf(writer, &.{ "./file", "-s" }));
 
     try t.expectEqualDeep(readelf.ReadElfOptions{
         .file_path = "./file",

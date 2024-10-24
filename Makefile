@@ -35,6 +35,10 @@ readelf: ./reproduction/ls
 readelf-args: ./reproduction/ls
 	zig build run -- readelf --file-header ./reproduction/ls --file-header --sections --segments -Shl
 
+.PHONY: readelf-symbols
+readelf-symbols: ./reproduction/ls
+	zig build run -- readelf ./reproduction/ls --symbols
+
 .PHONY: objcopy
 objcopy: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_no_args

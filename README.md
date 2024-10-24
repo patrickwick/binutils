@@ -3,22 +3,6 @@
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
 
-Zig objcopy currently has strict limitations:
-
-* all input file sections must be ordered ascending by file offsets
-* target endianness must match native endianness
-* no section or program header can be relocated, meaning:
-    * shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)
-    * changing section alignment may corrupt headers that are not relocated by shifting sections contents into the header offset due to increased alignment
-    * sections cannot be resized
-    * sections cannot be reordered
-* testing is difficult due to scattered use of the file system and nested code
-* -j / --only-section and --pad-to are not supported for ELF to ELF copying
-* no support for multiple single character arguments with single dash, e.g. `-gS`
-
-There are many possible optimizations that won't be done before the existing zig objcopy ELF to ELF feature set without the limitations is achieved.
-Input file modifications are avoided as much as possible, i.e.: sections and headers are only relocated when necessary.
-
 ## Usage
 
 ```
@@ -113,3 +97,20 @@ General Options:
 * rejects input if program header loads a subset of a section. It has to load entire sections.
 * ELF to ELF copying only, raw and hex output support will be added later
 
+### Current Zig Limitations
+
+Zig objcopy currently has strict limitations:
+
+* all input file sections must be ordered ascending by file offsets
+* target endianness must match native endianness
+* no section or program header can be relocated, meaning:
+    * shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)
+    * changing section alignment may corrupt headers that are not relocated by shifting sections contents into the header offset due to increased alignment
+    * sections cannot be resized
+    * sections cannot be reordered
+* testing is difficult due to scattered use of the file system and nested code
+* -j / --only-section and --pad-to are not supported for ELF to ELF copying
+* no support for multiple single character arguments with single dash, e.g. `-gS`
+
+There are many possible optimizations that won't be done before the existing zig objcopy ELF to ELF feature set without the limitations is achieved.
+Input file modifications are avoided as much as possible, i.e.: sections and headers are only relocated when necessary.

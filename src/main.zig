@@ -183,6 +183,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                     if (args.len > i + 1) {
                         defer i += 1;
                         const opt = args[i + 1];
+                        // TODO: support hex with 0x prefix
                         const address = std.fmt.parseInt(usize, opt, 10) catch fatalPrintUsageObjCopy(
                             out,
                             "unrecognized argument: '{s}', expecting --pad-to <addr>",
@@ -353,8 +354,18 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
     return .{
         .in_file_path = in_file_path.?,
         .out_file_path = out_file_path.?,
-        .add_section = add_section,
+        .output_target = output_target,
         .only_section = only_section,
+        .pad_to = pad_to,
+        .strip_debug = strip_debug,
+        .strip_all = strip_all,
+        .only_keep_debug = only_keep_debug,
+        .add_gnu_debuglink = add_gnu_debuglink,
+        .extract_to = extract_to,
+        .compress_debug_sections = compress_debug_sections,
+        .set_section_alignment = set_section_alignment,
+        .set_section_flags = set_section_flags,
+        .add_section = add_section,
     };
 }
 

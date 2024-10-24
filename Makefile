@@ -7,6 +7,8 @@ all:
 	${MAKE} objcopy
 	${MAKE} objcopy-add-section
 	${MAKE} objcopy-only-section
+	${MAKE} objcopy-pad-to-small
+	${MAKE} objcopy-pad-to
 
 .PHONY: watch
 watch:
@@ -49,3 +51,13 @@ objcopy-only-section: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text --only-section=.text
 	# zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text -j .text
 	zig build run -- readelf ./reproduction/ls_objcopy_only_section_text -hSl
+
+.PHONY: objcopy-pad-to-small
+objcopy-pad-to-small: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_pad_to_small --pad-to 100
+	zig build run -- readelf ./reproduction/ls_objcopy_pad_to_small -hSl
+
+.PHONY: objcopy-pad-to
+objcopy-pad-to: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_pad_to --pad-to 160000
+	zig build run -- readelf ./reproduction/ls_objcopy_pad_to -hSl

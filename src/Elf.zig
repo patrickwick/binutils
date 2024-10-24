@@ -43,7 +43,8 @@ pub const EIdent = struct {
 };
 
 comptime {
-    // TODO: verify that each field is a byte in size => important if source endianess does not match native endianness
+    // verify that each field is a byte in size, so endianness does not matter
+    for (std.meta.fields(EIdent)) |field| std.debug.assert(@sizeOf(field.type) == 1);
 }
 
 pub const Section = struct {
@@ -55,13 +56,7 @@ pub const Section = struct {
         size: usize,
     };
 
-    pub const NoBits = struct {
-        // TODO: are those required at all?
-        // * the information is stored in the header, so it's redundant and can go out of sync.
-        // * rename: they're **not** file offsets / sizes, they're process virtual addresses / memory size when laoded.
-        offset: usize,
-        size: usize,
-    };
+    pub const NoBits = void;
 
     // new data written into new sections that did not exist in the input
     pub const Data = []const u8;
@@ -157,6 +152,10 @@ pub const ProgramSegment = struct {
     /// Section to segment mapping. A segment can reference 0 to n sections.
     /// Does not support referencing a subrange of a section.
     segment_mapping: SegmentMapping,
+
+    pub fn deinit(self: *@This()) void {
+        self.segment_mapping.deinit();
+    }
 };
 
 pub const Sections = std.ArrayList(Section);
@@ -243,9 +242,10 @@ pub fn init(
 }
 
 pub fn deinit(self: *@This()) void {
-    // TODO: use sections / segments types with deinit functions
     for (self.sections.items) |*section| section.deinit();
     self.sections.deinit();
+
+    for (self.program_segments.items) |*segment| segment.deinit();
     self.program_segments.deinit();
 }
 
@@ -700,12 +700,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                     .offset = section.sh_offset,
                     .size = section.sh_size,
                 },
-            } else .{
-                .no_bits = .{
-                    .offset = section.sh_offset,
-                    .size = section.sh_size,
-                },
-            };
+            } else .no_bits;
 
             defer section_handle_counter += 1;
             try sections.append(.{

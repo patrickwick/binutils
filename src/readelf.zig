@@ -25,13 +25,89 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
     if (options.file_header) printElfHeader(out.writer().any(), &elf) catch |err| fatal("failed printing ELF header: {s}", .{@errorName(err)});
     if (options.section_headers) printElfSectionHeaders(out.writer().any(), &elf) catch |err| fatal("failed printing ELF section headers: {s}", .{@errorName(err)});
     if (options.program_headers) printElfProgramHeaders(out.writer().any(), &elf) catch |err| fatal("failed printing program headers: {s}", .{@errorName(err)});
-    if (options.symbols) printSymbols(out.writer().any(), &elf) catch |err| fatal("failed printing symbol table: {s}", .{@errorName(err)});
+    if (options.symbols) printSymbols(file, out.writer().any(), &elf) catch |err| fatal("failed printing symbol table: {s}", .{@errorName(err)});
 }
 
-fn printSymbols(out: std.io.AnyWriter, elf: *const Elf) !void {
-    // TODO
-    _ = elf;
-    _ = out;
+pub const SymbolType = enum(u4) {
+    notype = std.elf.STT_NOTYPE,
+    object = std.elf.STT_OBJECT,
+    func = std.elf.STT_FUNC,
+    section = std.elf.STT_SECTION,
+    file = std.elf.STT_FILE,
+    common = std.elf.STT_COMMON,
+    tls = std.elf.STT_TLS,
+    num = std.elf.STT_NUM,
+    gnu_ifunc = std.elf.STT_GNU_IFUNC,
+
+    pub inline fn fromRawType(st_type: u4) @This() {
+        return std.meta.intToEnum(@This(), st_type) catch fatal("failed mapping st_type to enum, unexpected value {d}", .{st_type});
+    }
+};
+
+fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !void {
+    // TODO: support multiple symtabs
+    const symbol_table = for (elf.sections.items) |*section| {
+        if (section.header.sh_type == std.elf.SHT_SYMTAB) break section;
+    } else {
+        try out.print("ELF input does not contain any symbol table SHT_SYMTAB section", .{});
+        return;
+    };
+
+    const symbol_count = std.math.divExact(usize, symbol_table.header.sh_size, symbol_table.header.sh_entsize) catch fatal(
+        "Symbol table size {d} is not divisble by entry size {d}",
+        .{ symbol_table.header.sh_size, symbol_table.header.sh_entsize },
+    );
+
+    const symtab_content = try symbol_table.readContent(input, elf.allocator);
+
+    const section_name = elf.getSectionName(symbol_table);
+    try out.print(
+        \\Symbol table '{s}' contains {d} entries:
+        \\   Num:    Value          Size Type    Bind   Vis      Ndx Name
+        \\
+    , .{ section_name, symbol_count });
+
+    // FIXME: crashes with current zig master 0.14.0-dev.1904+e2e79960d, see https://github.com/ziglang/zig/issues/21798
+    // use type of input file class, not native architecture
+    // switch (elf.e_ident.ei_class) {
+    // instantiate code per class (type cannot depend on runtime value)
+    //   inline else => |class| {
+    const SymbolRef = std.elf.Elf64_Sym; // if (class == .elfclass64) std.elf.Elf64_Sym else std.elf.Elf32_Sym;
+
+    // TODO: swap bytes
+    if (elf.isEndianMismatch()) fatal("input file with non-native endianness is not supported yet", .{});
+
+    if (@sizeOf(SymbolRef) != symbol_table.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
+        symbol_table.header.sh_entsize,
+        @sizeOf(SymbolRef),
+    });
+
+    const string_table_section_index = symbol_table.header.sh_link;
+    const string_table_section = &elf.sections.items[string_table_section_index];
+    const string_table_content = try string_table_section.readContent(input, elf.allocator);
+
+    const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
+    for (symbol_entries, 0..) |entry, i| {
+        const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry));
+
+        const name = name: {
+            switch (st_type) {
+                .notype => break :name "",
+                .section => break :name elf.getSectionName(&elf.sections.items[entry.st_shndx]),
+                else => {},
+            }
+            if (entry.st_name == 0) break :name "";
+            break :name std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[entry.st_name])));
+        };
+
+        // TODO: format properly
+        try out.print(
+            \\{d} 0x{x} 0x{x} {s} {s}
+            \\
+        , .{ i, entry.st_value, entry.st_size, @tagName(st_type), name });
+    }
+    //   },
+    // }
 }
 
 fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {

@@ -111,13 +111,14 @@ pub const Section = struct {
         }
     }
 
+    // FIXME: passing the allocator is pointless here since the deinit is already bound to the allocator stored in the struct
     pub fn readContent(self: *@This(), input: anytype, allocator: std.mem.Allocator) ![]const u8 {
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
         switch (self.content) {
             .input_file_range => |range| {
-                self.allocator = allocator;
+                self.allocator = allocator; // FIXME: remove
                 const data = try allocator.alloc(u8, range.size);
                 errdefer allocator.free(data);
 
@@ -247,6 +248,10 @@ pub fn deinit(self: *@This()) void {
 
     for (self.program_segments.items) |*segment| segment.deinit();
     self.program_segments.deinit();
+}
+
+pub inline fn isEndianMismatch(self: *const @This()) bool {
+    return builtin.cpu.arch.endian() != self.e_ident.ei_data;
 }
 
 pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
@@ -384,6 +389,7 @@ pub fn fixup(self: *@This()) !void {
     }
 
     // TODO: update section to segment mapping
+    // TODO: update symbol table st_shndx if the index has changed
 }
 
 pub fn validate(self: *const @This()) !void {

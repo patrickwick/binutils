@@ -4,12 +4,17 @@ all:
 	${MAKE} build
 	${MAKE} readelf
 	${MAKE} readelf-args
+	${MAKE} readelf-symbols
 	${MAKE} objcopy
 	${MAKE} objcopy-add-section
 	${MAKE} objcopy-only-section
 	${MAKE} objcopy-pad-to-small
 	${MAKE} objcopy-pad-to
 	${MAKE} objcopy-set-section-flags
+
+.PHONY: release
+release:
+	zig build -Doptimize=ReleaseFast
 
 .PHONY: watch
 watch:
@@ -37,7 +42,7 @@ readelf-args: ./reproduction/ls
 
 .PHONY: readelf-symbols
 readelf-symbols: ./reproduction/ls
-	zig build run -- readelf ./reproduction/ls --symbols
+	zig build run -- readelf ./zig-out/bin/binutils --symbols
 
 .PHONY: objcopy
 objcopy: ./reproduction/ls

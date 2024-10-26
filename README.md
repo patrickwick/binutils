@@ -97,8 +97,8 @@ General Options:
 
 * rejects input if program header loads a subset of a section. It has to load entire sections.
 * ELF to ELF copying only
-    * not planned to support PE/COFF ever
     * Mach-O maybe at some point
+    * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
 
 ## TODO
 
@@ -118,7 +118,7 @@ Zig objcopy currently has strict limitations:
     * sections cannot be resized
     * sections cannot be reordered
 * gnu_debuglink paths are relative to working directory but should be relative to modified binary
-* testing is difficult due to scattered use of the file system and nested code
+* testing is difficult due to scattered use of the file system and nested code with scattered assumptions
 * -j / --only-section and --pad-to are not supported for ELF to ELF copying
 * no support for multiple single character arguments with single dash, e.g. `-gS`
 

@@ -551,12 +551,18 @@ pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
     self.e_shnum -= 1;
     if (index < self.e_shstrndx) self.e_shstrndx -= 1;
 
+    // remove section links to the removed section and shift the ones that moved
+    for (self.sections.items) |*section| {
+        if (section.header.sh_link > index) section.header.sh_link -= 1;
+        if (section.header.sh_link == index) section.header.sh_link = std.elf.SHN_UNDEF;
+    }
+
     self.sections.items[index].deinit();
     _ = self.sections.orderedRemove(index);
 
     // TODO: update shstrtab => remove name
     // TODO: update sh_name for removed name
-    // TODO: remove section links to the removed section
+    // TODO: remove symtab .section entries
 
     try self.fixup();
 }

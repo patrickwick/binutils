@@ -163,17 +163,50 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
     // -g, --strip-debug
     if (options.strip_debug) {
-        _ = options.strip_debug; // TODO
+        // double loop since iteration needs to be restarted on modified array
+        while (true) {
+            for (elf.sections.items) |*section| {
+                const name = elf.getSectionName(section);
+                // TODO: is the name sufficient?
+                if (std.mem.startsWith(u8, name, ".debug_")) {
+                    std.log.info("Stripping debug section '{s}'", .{name});
+                    elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
+                    break;
+                }
+            } else break;
+        }
     }
 
     // -S, --strip-all
     if (options.strip_all) {
-        _ = options.strip_all; // TODO
+        // TODO: strip all sections that are not mapped to a segment.
+        // for (elf.sections.items) |*section| {
+        //     const is_in_segment = mapped: for (elf.program_segments.items) |segment| {
+        //         for (segment.segment_mapping.items) |handle| if (section.handle == handle) break :mapped true;
+        //     } else false;
+        //     _ = is_in_segment;
+
+        //     switch (section.header.sh_type) {
+        //         std.elf.SHT_SYMTAB => {},
+        //         else => {},
+        //     }
+        // }
     }
 
     // --only-keep-debug
     if (options.only_keep_debug) {
-        _ = options.only_keep_debug; // TODO
+        // double loop since iteration needs to be restarted on modified array
+        while (true) {
+            for (elf.sections.items) |*section| {
+                const name = elf.getSectionName(section);
+                // TODO: is the name sufficient?
+                if (!std.mem.startsWith(u8, name, ".debug_")) {
+                    std.log.info("Stripping debug section '{s}'", .{name});
+                    elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
+                    break;
+                }
+            } else break;
+        }
     }
 
     // --add-gnu-debuglink

@@ -13,6 +13,7 @@ all:
 	${MAKE} objcopy-pad-to
 	${MAKE} objcopy-set-section-flags
 	${MAKE} objcopy-add-gnu-debuglink
+	${MAKE} objcopy-strip-debug
 
 .PHONY: release
 release:
@@ -94,3 +95,10 @@ objcopy-add-gnu-debuglink: ./reproduction/ls
 	readelf ./reproduction/binutils_add_gnu_debuglink -wA
 	objdump ./reproduction/binutils_add_gnu_debuglink -Wk
 	./reproduction/ls_add_gnu_debuglink
+
+.PHONY: objcopy-strip-debug
+objcopy-strip-debug: ./reproduction/ls
+	cp ./zig-out/bin/binutils ./reproduction/binutils
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_strip_debug --strip-debug
+	zig build run -- readelf ./reproduction/binutils_strip_debug -hSl
+	./reproduction/binutils_strip_debug --help

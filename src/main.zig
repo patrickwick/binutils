@@ -75,6 +75,7 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
     var program_headers = false;
     var symbols = false;
 
+    // TODO: add -wA for gnu_debuglink
     for (args) |arg| {
         if (arg.len == 0) continue;
         if (arg[0] == '-') {
@@ -469,6 +470,7 @@ const OBJCOPY_USAGE =
     \\
     \\  --add-gnu-debuglink=<file>
     \\      Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
+    \\      The <file> path is relative to the in-file directory. Absolute paths are supported as well.
     \\
     \\  --extract-to <file>
     \\      Extract the removed sections into <file>, and add a .gnu-debuglink section.

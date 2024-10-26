@@ -772,6 +772,13 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     return elf;
 }
 
+pub fn getSectionByName(self: *const @This(), name: []const u8) ?*Section {
+    return for (self.sections.items) |*section| {
+        const section_name = getSectionName(self, section);
+        if (std.mem.eql(u8, name, section_name)) return section;
+    } else null;
+}
+
 pub fn getSection(self: *const @This(), handle: Section.Handle) ?*Section {
     return for (self.sections.items) |*section| {
         if (section.handle == handle) return section;

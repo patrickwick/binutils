@@ -88,6 +88,9 @@ objcopy-set-section-flags: ./reproduction/ls
 
 .PHONY: objcopy-add-gnu-debuglink
 objcopy-add-gnu-debuglink: ./reproduction/ls
-	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_add_gnu_debuglink --add-gnu-debuglink=ls.debug
-	zig build run -- readelf ./reproduction/ls_add_gnu_debuglink -hSl
+	cp ./zig-out/bin/binutils ./reproduction/binutils
+	objcopy ./reproduction/binutils ./reproduction/binutils.debug --only-keep-debug
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_add_gnu_debuglink --add-gnu-debuglink=binutils.debug
+	readelf ./reproduction/binutils_add_gnu_debuglink -wA
+	objdump ./reproduction/binutils_add_gnu_debuglink -Wk
 	./reproduction/ls_add_gnu_debuglink

@@ -70,6 +70,7 @@ Options:
 
   --add-gnu-debuglink=<file>
       Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
+      The <file> path is relative to the in-file directory. Absolute paths are supported as well.
 
   --extract-to <file>
       Extract the removed sections into <file>, and add a .gnu-debuglink section.
@@ -116,6 +117,7 @@ Zig objcopy currently has strict limitations:
     * changing section alignment may corrupt headers that are not relocated by shifting sections contents into the header offset due to increased alignment
     * sections cannot be resized
     * sections cannot be reordered
+* gnu_debuglink paths are relative to working directory but should be relative to modified binary
 * testing is difficult due to scattered use of the file system and nested code
 * -j / --only-section and --pad-to are not supported for ELF to ELF copying
 * no support for multiple single character arguments with single dash, e.g. `-gS`

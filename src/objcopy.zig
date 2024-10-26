@@ -178,14 +178,66 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
     // --add-gnu-debuglink
     if (options.add_gnu_debuglink) |add_gnu_debuglink| {
-        // TODO: compute CRC
-        const link_content = add_gnu_debuglink.link;
+        const link = add_gnu_debuglink.link;
 
-        // TODO: check if section already exist, then overwrite it instead
-        elf.addSection(in_file, ".gnu_debuglink", link_content) catch |err| fatal(
-            "failed adding .gnu_debuglink: {s}",
+        const crc = crc: {
+            // relative paths are relative to the input file, not working directory
+            const directory = std.fs.path.dirname(options.in_file_path) orelse fatal(
+                "could not determine directory of '{s}'",
+                .{options.in_file_path},
+            );
+
+            const base_name = std.fs.path.basename(link);
+            const path = std.fs.path.join(allocator, &.{ directory, base_name }) catch |err| fatal(
+                "failed joing paths '{s}', '{s}': {s}",
+                .{ directory, base_name, @errorName(err) },
+            );
+
+            const file = std.fs.cwd().openFile(path, .{}) catch |err| fatal("cannot open file '{s}': {s}", .{
+                path,
+                @errorName(err),
+            });
+            defer file.close();
+
+            var buffer: [8000]u8 = undefined;
+            var crc = std.hash.Crc32.init();
+            while (true) {
+                const bytes_read = file.read(&buffer) catch |err| fatal("failed reading '{s}': {s}", .{
+                    path,
+                    @errorName(err),
+                });
+
+                if (bytes_read == 0) break;
+                crc.update(buffer[0..bytes_read]);
+            }
+
+            break :crc crc.final();
+        };
+
+        const crc_bytes = std.mem.toBytes(crc);
+        const alignment = 4;
+        const crc_offset = std.mem.alignForward(usize, link.len + 1, alignment);
+        const link_content = allocator.alloc(u8, crc_offset + crc_bytes.len) catch |err| fatal(
+            "failed allocating debuglink section content: {s}",
             .{@errorName(err)},
         );
+        @memcpy(link_content[0..link.len], link);
+        @memset(link_content[link.len..crc_offset], 0);
+        @memcpy(link_content[crc_offset..], &crc_bytes);
+
+        const name = ".gnu_debuglink";
+        if (elf.getSectionByName(name)) |section| {
+            section.content = .{ .data_allocated = link_content };
+            elf.fixup() catch |err| fatal(
+                "failed overwriting .gnu_debuglink: {s}",
+                .{@errorName(err)},
+            );
+        } else {
+            elf.addSection(in_file, name, link_content) catch |err| fatal(
+                "failed adding .gnu_debuglink: {s}",
+                .{@errorName(err)},
+            );
+        }
     }
 
     // --extract-to

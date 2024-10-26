@@ -11,7 +11,6 @@ Usage: binutils command [options]
 Commands:
 
   readelf          Display information about ELF files
-  objdump          Display information from object files
   objcopy          Copy and translate object files
 
 General Options:
@@ -53,9 +52,6 @@ General Options:
 Usage: binutils objcopy [options] in-file out-file
 
 Options:
-
-  -O, --output-target=<value>
-      Format of the output file.
 
   -j <section>, --only-section=<section>
       Remove all sections except <section> and the section name table section (.shstrtab).

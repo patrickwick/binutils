@@ -452,9 +452,6 @@ const OBJCOPY_USAGE =
     \\
     \\Options:
     \\
-    \\  -O <value>, --output-target=<value>
-    \\      Format of the output file.
-    \\
     \\  -j <section>, --only-section=<section>
     \\      Remove all sections except <section> and the section name table section (.shstrtab).
     \\

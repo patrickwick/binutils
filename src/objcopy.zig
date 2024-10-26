@@ -104,7 +104,8 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
     // -O, --output_target
     switch (options.output_target) {
-        else => {}, // TODO
+        .elf => {},
+        else => fatal("only ELF to ELF copying is currently supported", .{}),
     }
 
     // --only-section

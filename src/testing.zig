@@ -14,7 +14,7 @@ pub fn expectExit(comptime expected_exit_code: u32, function: anytype) !void {
     if (child_pid == 0) {
         // child
         function() catch {};
-        std.process.exit(std.posix.E.SUCCESS);
+        std.process.exit(@intFromEnum(std.posix.E.SUCCESS));
     }
 
     // parent

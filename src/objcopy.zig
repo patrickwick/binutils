@@ -177,10 +177,14 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
     // --add-gnu-debuglink
     if (options.add_gnu_debuglink) |add_gnu_debuglink| {
-        _ = add_gnu_debuglink; // TODO
-        // const link_content = add_gnu_debuglink.link; // TODO
+        // TODO: compute CRC
+        const link_content = add_gnu_debuglink.link;
 
-        // try elf.addSection(in_file, ".gnu_debuglink", link_content);
+        // TODO: check if section already exist, then overwrite it instead
+        elf.addSection(in_file, ".gnu_debuglink", link_content) catch |err| fatal(
+            "failed adding .gnu_debuglink: {s}",
+            .{@errorName(err)},
+        );
     }
 
     // --extract-to

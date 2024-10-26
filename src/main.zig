@@ -251,12 +251,13 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                 }
 
                 // --add-gnu-debuglink=<file>
-                if (std.mem.eql(u8, arg, "--add-gnu-debuglink")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        const opt = args[i + 1];
-                        add_gnu_debuglink = .{ .link = opt };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-gnu-debuglink <file>", .{arg});
+                if (std.mem.startsWith(u8, arg, "--add-gnu-debuglink")) {
+                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized {s} argument, expecting --add-gnu-debuglink=<file>",
+                        .{arg},
+                    );
+                    add_gnu_debuglink = .{ .link = split.second };
                     continue;
                 }
 
@@ -825,6 +826,12 @@ test parseObjCopy {
         .out_file_path = "./out",
         .strip_all = true,
     }, parseObjCopy(writer, &.{ "./in", "./out", "--strip-all" }));
+
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./in",
+        .out_file_path = "./out",
+        .add_gnu_debuglink = .{ .link = "link.debug" },
+    }, parseObjCopy(writer, &.{ "./in", "./out", "--add-gnu-debuglink=link.debug" }));
 
     try t.expectEqualDeep(objcopy.ObjCopyOptions{
         .in_file_path = "./in",

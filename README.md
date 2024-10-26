@@ -100,7 +100,8 @@ General Options:
 
 * rejects input if program header loads a subset of a section. It has to load entire sections.
 * ELF to ELF copying only
-    * not planned to support Windows PE ever
+    * not planned to support PE/COFF ever
+    * Mach-O maybe at some point
 
 ## TODO
 

@@ -12,6 +12,7 @@ all:
 	${MAKE} objcopy-pad-to-small
 	${MAKE} objcopy-pad-to
 	${MAKE} objcopy-set-section-flags
+	${MAKE} objcopy-add-gnu-debuglink
 
 .PHONY: release
 release:
@@ -84,3 +85,9 @@ objcopy-set-section-flags: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_set_section_flags --set-section-flags .text=alloc,load,readonly,code
 	zig build run -- readelf ./reproduction/ls_objcopy_set_section_flags -hSl
 	./reproduction/ls_objcopy_set_section_flags
+
+.PHONY: objcopy-add-gnu-debuglink
+objcopy-add-gnu-debuglink: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_add_gnu_debuglink --add-gnu-debuglink=ls.debug
+	zig build run -- readelf ./reproduction/ls_add_gnu_debuglink -hSl
+	./reproduction/ls_add_gnu_debuglink

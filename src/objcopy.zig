@@ -178,6 +178,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     // --add-gnu-debuglink
     if (options.add_gnu_debuglink) |add_gnu_debuglink| {
         _ = add_gnu_debuglink; // TODO
+        // const link_content = add_gnu_debuglink.link; // TODO
+
+        // try elf.addSection(in_file, ".gnu_debuglink", link_content);
     }
 
     // --extract-to

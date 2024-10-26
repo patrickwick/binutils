@@ -1,6 +1,7 @@
 # Convenience targets for temporary tests that are not meant to be part of build.zig
 all:
 	${MAKE} test
+	${MAKE} test_integration
 	${MAKE} build
 	${MAKE} readelf
 	${MAKE} readelf-args
@@ -27,6 +28,10 @@ build:
 .PHONY: test
 test:
 	zig build test --summary all
+
+.PHONY: test_integration
+test_integration:
+	zig build test_integration --summary all
 
 ./reproduction/ls:
 	mkdir -p ./reproduction

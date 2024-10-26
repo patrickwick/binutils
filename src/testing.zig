@@ -14,7 +14,7 @@ pub fn expectExit(comptime expected_exit_code: u32, function: anytype) !void {
     if (child_pid == 0) {
         // child
         function() catch {};
-        std.process.exit(0);
+        std.process.exit(std.posix.E.SUCCESS);
     }
 
     // parent

@@ -389,7 +389,8 @@ pub fn fixup(self: *@This()) !void {
     }
 
     // TODO: update section to segment mapping
-    // TODO: update symbol table st_shndx if the index has changed
+
+    // TODO: update symbol table st_shndx if the index has changed (used to reference section names for STT_SECTION)
 }
 
 pub fn validate(self: *const @This()) !void {
@@ -477,6 +478,8 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     shstrtab.content = .{ .data_allocated = copy };
     shstrtab.header.sh_size = copy.len;
 
+    // TODO: add STT_SECTION symbol for the new section name to symtab?
+
     try self.fixup();
 
     return name_index;
@@ -492,7 +495,7 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     const offset = self.getMaximumFileOffset();
 
     const no_flags = 0;
-    const default_address_alignment = 8;
+    const default_address_alignment = 4;
     const not_mapped = 0;
     const dynamic = 0;
 

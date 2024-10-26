@@ -61,6 +61,10 @@ fn parseCommand(out: std.io.AnyWriter, args: []const []const u8) Command {
     if (std.mem.eql(u8, command, "readelf")) return Command{ .readelf = parseReadElf(out, args[1..]) };
     if (std.mem.eql(u8, command, "objdump")) return Command{ .objdump = parseObjDump(out, args[1..]) };
     if (std.mem.eql(u8, command, "objcopy")) return Command{ .objcopy = parseObjCopy(out, args[1..]) };
+    if (std.mem.eql(u8, command, "--help")) {
+        printUsage(out);
+        std.process.exit(0);
+    }
     fatalPrintUsage(out, "unrecognized command: '{s}'", .{args[0]});
 }
 

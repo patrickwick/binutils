@@ -45,7 +45,6 @@ General Options:
 
   --help
       Print command-specific usage
-
 ```
 
 ### Objcopy Usage
@@ -95,19 +94,25 @@ General Options:
 
   -h, --help
       Print command-specific usage
-
 ```
 
 ## Limitations
 
 * rejects input if program header loads a subset of a section. It has to load entire sections.
-* ELF to ELF copying only, raw and hex output support will be added later
+* ELF to ELF copying only
+    * not planned to support Windows PE ever
+
+## TODO
+
+* raw and hex output not support yet
+* 64bit ELF files only due to compiler bug in inline else
 
 ### Current Zig Limitations
 
 Zig objcopy currently has strict limitations:
 
 * all input file sections must be ordered ascending by file offsets
+    * does not work on ELF files created with zig itself
 * target endianness must match native endianness
 * no section or program header can be relocated, meaning:
     * shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)

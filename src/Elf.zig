@@ -824,7 +824,6 @@ pub fn getSection(self: *const @This(), handle: Section.Handle) ?*Section {
 
 pub inline fn isDebugSection(self: *const @This(), section: *const Section) bool {
     const name = self.getSectionName(section);
-    // TODO: is the name sufficient?
     return std.mem.startsWith(u8, name, ".debug_");
 }
 

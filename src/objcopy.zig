@@ -320,7 +320,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             );
 
             // only compress if the compressed data is smaller than the input data
-            const compressed = allocator.alloc(u8, content.len + @sizeOf(std.elf.Chdr)) catch |err| fatal(
+            var compressed = allocator.alloc(u8, content.len + @sizeOf(std.elf.Chdr)) catch |err| fatal(
                 "failed allocating buffer for compression of size '{d}': {s}",
                 .{ content.len, @errorName(err) },
             );
@@ -346,16 +346,22 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 .{ name, @errorName(err) },
             );
 
-            const compressed_subset = compressed[0..out_buffer_stream.pos];
-            if (compressed_subset.len >= content.len) {
+            if (out_buffer_stream.pos >= content.len) {
                 std.log.debug("skipped compressing section '{s}' since size was not reduced", .{name});
                 continue;
             }
-            std.log.debug("compressed section '{s}' from {d} to {d} bytes", .{ name, content.len, compressed_subset.len });
+
+            // reduce buffer size to what was actually required
+            compressed = allocator.realloc(compressed, out_buffer_stream.pos) catch |err| fatal(
+                "failed reducing compressed buffer size from {d} to {d} for section '{s}': {s}",
+                .{ compressed.len, out_buffer_stream.pos, name, @errorName(err) },
+            );
+            std.log.debug("compressed section '{s}' from {d} to {d} bytes", .{ name, content.len, compressed.len });
 
             section.header.sh_flags |= std.elf.SHF_COMPRESSED;
+            section.header.sh_size = compressed.len;
 
-            elf.updateSectionContent(section.handle, compressed_subset) catch |err| fatal(
+            elf.updateSectionContent(section.handle, compressed) catch |err| fatal(
                 "failed updating section content '{s}': {s}",
                 .{ name, @errorName(err) },
             );

@@ -137,24 +137,11 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         if (elf.sections.items.len == 0) fatal("ELF input does not contain any sections to pad", .{});
         if (elf.sections.items.len == 1) fatal("ELF input null section cannot be padded", .{});
 
-        // TODO: add function to Elf
-        const sorted = sorted: {
-            const sorted_sections = elf.sections.clone() catch |err| fatal("failed sorting sections: {s}", .{@errorName(err)});
-
-            const Sort = struct {
-                fn lessThan(context: *const @This(), left: Elf.Section, right: Elf.Section) bool {
-                    _ = context;
-                    return left.header.sh_offset < right.header.sh_offset;
-                }
-            };
-            var sort_context = Sort{};
-            std.mem.sort(Elf.Section, sorted_sections.items, &sort_context, Sort.lessThan);
-
-            break :sorted sorted_sections;
-        };
+        const sorted = elf.getSortedSectionPointersAlloc(allocator) catch |err| fatal("failed sorting sections: {s}", .{@errorName(err)});
         defer sorted.deinit();
 
-        const section = &sorted.items[sorted.items.len - 1];
+        std.debug.assert(sorted.items.len > 0);
+        const section = sorted.items[sorted.items.len - 1];
         const end = section.header.sh_offset + section.header.sh_size;
         if (pad_to.address > end) {
             const old_content: []u8 = section.readContent(in_file, allocator) catch |err| fatal(

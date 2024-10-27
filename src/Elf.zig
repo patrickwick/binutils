@@ -519,6 +519,22 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     self.sections.items[self.sections.items.len - 1].header.sh_offset = self.getMaximumFileOffset();
 }
 
+pub fn getSortedSectionPointersAlloc(self: *const @This(), allocator: std.mem.Allocator) !std.ArrayList(*Section) {
+    var sorted = try std.ArrayList(*Section).initCapacity(allocator, self.sections.items.len);
+    for (self.sections.items) |*section| sorted.appendAssumeCapacity(section);
+
+    const Sort = struct {
+        fn lessThan(context: *const @This(), left: *const Elf.Section, right: *const Elf.Section) bool {
+            _ = context;
+            return left.header.sh_offset < right.header.sh_offset;
+        }
+    };
+    var sort_context = Sort{};
+    std.mem.sort(*Section, sorted.items, &sort_context, Sort.lessThan);
+
+    return sorted;
+}
+
 pub fn updateSectionContent(self: *@This(), handle: Section.Handle, content: []u8) !void {
     for (self.sections.items) |*section| {
         if (section.handle == handle) {

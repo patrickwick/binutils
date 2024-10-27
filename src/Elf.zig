@@ -805,6 +805,8 @@ inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: any
     return a_min < b_max and b_min < a_max;
 }
 
+// TODO: create an additional fatal for validations after a valid file was modified?
+// In that case, it would be a bug in here and should be reported.
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);

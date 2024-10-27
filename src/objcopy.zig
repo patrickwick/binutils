@@ -81,6 +81,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     const out = std.io.getStdOut();
     _ = out;
 
+    // TODO: allow single argument objcopy as well using temporary output, see man objcopy:
+    // "If you do not specify outfile, objcopy creates a temporary file and destructively renames the result with the name of infile."
+    // The input file cannot be overwritten since sections are copied lazyly on write and the file needs to stay valid if an operations fails.
     if (std.mem.eql(u8, options.in_file_path, options.out_file_path)) fatal("input and output file path are not allowed to be equal", .{});
 
     var in_file = std.fs.cwd().openFile(options.in_file_path, .{}) catch |err| fatal(
@@ -167,6 +170,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         while (true) {
             for (elf.sections.items) |*section| {
                 const name = elf.getSectionName(section);
+
+                // TODO: check if any other sections links to this section transitively
+
                 // TODO: is the name sufficient?
                 if (std.mem.startsWith(u8, name, ".debug_")) {
                     std.log.info("Stripping debug section '{s}'", .{name});
@@ -199,14 +205,27 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         while (true) {
             for (elf.sections.items) |*section| {
                 const name = elf.getSectionName(section);
+
                 // TODO: is the name sufficient?
-                if (!std.mem.startsWith(u8, name, ".debug_")) {
-                    std.log.info("Stripping debug section '{s}'", .{name});
+                const not_debug = !std.mem.startsWith(u8, name, ".debug_");
+
+                // TODO: check if any other sections links to this section transitively
+
+                const remove = switch (section.header.sh_type) {
+                    std.elf.SHT_SYMTAB => false,
+                    std.elf.SHT_STRTAB => false,
+                    else => not_debug,
+                };
+
+                if (remove) {
+                    std.log.info("Stripping non-debug section '{s}'", .{name});
                     elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
                     break;
                 }
             } else break;
         }
+
+        // TODO: compact file. Header will not be shifted up automatically to minimize layout modifications
     }
 
     // --add-gnu-debuglink

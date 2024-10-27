@@ -14,6 +14,8 @@ all:
 	${MAKE} objcopy-set-section-flags
 	${MAKE} objcopy-add-gnu-debuglink
 	${MAKE} objcopy-strip-debug
+	${MAKE} objcopy-only-keep-debug
+	${MAKE} objcopy-strip-all
 
 .PHONY: release
 release:
@@ -94,7 +96,7 @@ objcopy-add-gnu-debuglink: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_add_gnu_debuglink --add-gnu-debuglink=binutils.debug
 	readelf ./reproduction/binutils_add_gnu_debuglink -wA
 	objdump ./reproduction/binutils_add_gnu_debuglink -Wk
-	./reproduction/ls_add_gnu_debuglink
+	./reproduction/binutils_add_gnu_debuglink --help
 
 .PHONY: objcopy-strip-debug
 objcopy-strip-debug: ./reproduction/ls
@@ -102,3 +104,17 @@ objcopy-strip-debug: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_strip_debug --strip-debug
 	zig build run -- readelf ./reproduction/binutils_strip_debug -hSl
 	./reproduction/binutils_strip_debug --help
+
+.PHONY: objcopy-only-keep-debug
+objcopy-only-keep-debug: ./reproduction/ls
+	cp ./zig-out/bin/binutils ./reproduction/binutils
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_only_keep_debug --only-keep-debug
+	zig build run -- readelf ./reproduction/binutils_only_keep_debug -hSl
+	readelf ./reproduction/binutils_only_keep_debug -S
+
+.PHONY: objcopy-strip-all
+objcopy-strip-all: ./reproduction/ls
+	cp ./zig-out/bin/binutils ./reproduction/binutils
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_strip_all --strip-all
+	zig build run -- readelf ./reproduction/binutils_strip_all -hSl
+	./reproduction/binutils_strip_all --help

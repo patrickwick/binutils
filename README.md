@@ -99,6 +99,7 @@ General Options:
 * ELF to ELF copying only
     * Mach-O maybe at some point
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
+* not tested: running objcopy on a 32bit system on 64bit ELF files. It should work but may not
 
 ## TODO
 
@@ -111,6 +112,7 @@ Zig objcopy currently has strict limitations:
 
 * all input file sections must be ordered ascending by file offsets
     * does not work on ELF files created with zig itself
+* input file path cannot match output file path
 * target endianness must match native endianness
 * no section or program header can be relocated, meaning:
     * shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)

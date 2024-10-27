@@ -1,8 +1,0 @@
-SECTIONS
-{
-  /* place section name string table (shstrtab) to front */
-	. = 0x08000000;
-	.shstrtab : {
-    * (.shstrtab);
-	}
-}

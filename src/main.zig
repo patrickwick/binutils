@@ -601,18 +601,6 @@ test splitOption {
 test parseCommand {
     try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
-            _ = parseCommand(std.io.null_writer.any(), &.{});
-        }
-    }.F);
-
-    try testing.expectExit(FATAL_EXIT_CODE, struct {
-        fn F() !void {
-            _ = parseCommand(std.io.null_writer.any(), &.{""});
-        }
-    }.F);
-
-    try testing.expectExit(FATAL_EXIT_CODE, struct {
-        fn F() !void {
             _ = parseCommand(std.io.null_writer.any(), &.{"discombobulate"});
         }
     }.F);

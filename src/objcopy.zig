@@ -316,10 +316,42 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             const name = elf.getSectionName(section);
             if (!std.mem.startsWith(u8, name, ".debug_")) continue;
 
-            std.log.debug("Compressing debug section '{s}'", .{name});
-            const compressed = [_]u8{}; // TODO
+            if ((section.header.sh_flags & std.elf.SHF_COMPRESSED) != 0) {
+                std.log.debug("Skipping already compresed debug section: '{s}'", .{name});
+                continue;
+            }
 
-            elf.updateSectionContent(section.handle, &compressed) catch |err| fatal(
+            const content = section.readContent(in_file, allocator) catch |err| fatal(
+                "failed reading uncompressed section content from '{s}': {s}",
+                .{ name, @errorName(err) },
+            );
+
+            // only compress if the compressed data is smaller than the input data
+            const compressed = allocator.alloc(u8, content.len) catch |err| fatal(
+                "failed allocating buffer for compression of size '{d}': {s}",
+                .{ content.len, @errorName(err) },
+            );
+
+            var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = content, .pos = 0 };
+            var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = compressed, .pos = 0 };
+
+            std.log.debug("compressing debug section '{s}'", .{name});
+            std.compress.zlib.compress(in_buffer_stream.reader(), out_buffer_stream.writer(), .{}) catch |err| fatal(
+                "failed compressing section content '{s}': {s}",
+                .{ name, @errorName(err) },
+            );
+
+            const compressed_subset = compressed[0..out_buffer_stream.pos];
+            if (compressed_subset.len >= content.len) {
+                std.log.debug("skipped compressing section '{s}' since size was not reduced", .{name});
+                continue;
+            }
+            std.log.debug("compressed section '{s}' from {d} to {d} bytes", .{ name, content.len, compressed_subset.len });
+
+            // TODO: change header to std.elf.Chdr
+            section.header.sh_flags |= std.elf.SHF_COMPRESSED;
+
+            elf.updateSectionContent(section.handle, compressed_subset) catch |err| fatal(
                 "failed updating section content '{s}': {s}",
                 .{ name, @errorName(err) },
             );

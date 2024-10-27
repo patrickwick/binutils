@@ -13,6 +13,7 @@ all:
 	${MAKE} objcopy-pad-to
 	${MAKE} objcopy-set-section-flags
 	${MAKE} objcopy-add-gnu-debuglink
+	${MAKE} objcopy-add-gnu-debuglink-strip-debug
 	${MAKE} objcopy-strip-debug
 	${MAKE} objcopy-only-keep-debug
 	${MAKE} objcopy-strip-all
@@ -97,6 +98,16 @@ objcopy-add-gnu-debuglink: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_add_gnu_debuglink --add-gnu-debuglink=binutils.debug
 	readelf ./reproduction/binutils_add_gnu_debuglink -wA
 	objdump ./reproduction/binutils_add_gnu_debuglink -Wk
+	./reproduction/binutils_add_gnu_debuglink --help
+
+.PHONY: objcopy-add-gnu-debuglink-strip-debug
+objcopy-add-gnu-debuglink-strip-debug: ./reproduction/ls
+	cp ./zig-out/bin/binutils ./reproduction/binutils
+	objcopy ./reproduction/binutils ./reproduction/binutils.debug --only-keep-debug
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_add_gnu_debuglink --add-gnu-debuglink=binutils.debug
+	zig build run -- objcopy ./reproduction/binutils_add_gnu_debuglink ./reproduction/binutils_add_gnu_debuglink_stripped_debug --strip-debug
+	readelf ./reproduction/binutils_add_gnu_debuglink_stripped_debug -wA
+	objdump ./reproduction/binutils_add_gnu_debuglink_stripped_debug -Wk
 	./reproduction/binutils_add_gnu_debuglink --help
 
 .PHONY: objcopy-strip-debug

@@ -16,7 +16,6 @@ pub const ObjCopyOptions = struct {
     strip_all: bool = false,
     only_keep_debug: bool = false,
     add_gnu_debuglink: ?AddGnuDebugLinkOption = null,
-    extract_to: ?ExtractToOption = null,
     compress_debug_sections: bool = false,
     set_section_alignment: ?SetSectionAlignmentOption = null,
     set_section_flags: ?SetSectionFlagsOption = null,
@@ -301,11 +300,6 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 .{@errorName(err)},
             );
         }
-    }
-
-    // --extract-to
-    if (options.extract_to) |extract_to| {
-        _ = extract_to; // TODO
     }
 
     // --compress-debug-sections

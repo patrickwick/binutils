@@ -180,7 +180,6 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
     var strip_all: bool = false;
     var only_keep_debug: bool = false;
     var add_gnu_debuglink: ?objcopy.AddGnuDebugLinkOption = null;
-    var extract_to: ?objcopy.ExtractToOption = null;
     var compress_debug_sections: bool = false;
     var set_section_alignment: ?objcopy.SetSectionAlignmentOption = null;
     var set_section_flags: ?objcopy.SetSectionFlagsOption = null;
@@ -263,16 +262,6 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                         .{arg},
                     );
                     add_gnu_debuglink = .{ .link = split.second };
-                    continue;
-                }
-
-                // --extract-to <file>
-                if (std.mem.eql(u8, arg, "--extract-to")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        const opt = args[i + 1];
-                        extract_to = .{ .target_path = opt };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --extract-to <file>", .{arg});
                     continue;
                 }
 
@@ -397,7 +386,6 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
         .strip_all = strip_all,
         .only_keep_debug = only_keep_debug,
         .add_gnu_debuglink = add_gnu_debuglink,
-        .extract_to = extract_to,
         .compress_debug_sections = compress_debug_sections,
         .set_section_alignment = set_section_alignment,
         .set_section_flags = set_section_flags,
@@ -475,9 +463,6 @@ const OBJCOPY_USAGE =
     \\  --add-gnu-debuglink=<file>
     \\      Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
     \\      The <file> path is relative to the in-file directory. Absolute paths are supported as well.
-    \\
-    \\  --extract-to <file>
-    \\      Extract the removed sections into <file>, and add a .gnu-debuglink section.
     \\
     \\  --compress-debug-sections
     \\      Compress DWARF debug sections with zlib

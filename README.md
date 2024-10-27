@@ -72,9 +72,6 @@ Options:
       Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
       The <file> path is relative to the in-file directory. Absolute paths are supported as well.
 
-  --extract-to <file>
-      Extract the removed sections into <file>, and add a .gnu-debuglink section.
-
   --compress-debug-sections
       Compress DWARF debug sections with zlib
 
@@ -95,6 +92,9 @@ General Options:
 
 ## Limitations
 
+* `zig objcopy --extract-to <file>` is not supported. I don't think it's a good option
+    * can easily achieved by combining --add-gnu-debuglink and --only-keep-debug
+    * it's neither a GNU nor LLVM binutil option
 * rejects input if program header loads a subset of a section. It has to load entire sections.
 * ELF to ELF copying only
     * Mach-O maybe at some point
@@ -103,7 +103,7 @@ General Options:
 
 ## TODO
 
-* raw and hex output not support yet
+* raw and hex output not supported yet
 * 64bit ELF files only due to compiler bug in inline else
 
 ### Current Zig Limitations

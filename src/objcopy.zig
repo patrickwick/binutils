@@ -326,7 +326,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             );
 
             // only compress if the compressed data is smaller than the input data
-            const compressed = allocator.alloc(u8, content.len) catch |err| fatal(
+            const compressed = allocator.alloc(u8, content.len + @sizeOf(std.elf.Chdr)) catch |err| fatal(
                 "failed allocating buffer for compression of size '{d}': {s}",
                 .{ content.len, @errorName(err) },
             );
@@ -335,6 +335,18 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = compressed, .pos = 0 };
 
             std.log.debug("compressing debug section '{s}'", .{name});
+            // FIXME: write with target header size, not native
+            // FIXME: write with target endianness, not native
+            // https://www.sco.com/developers/gabi/latest/ch4.sheader.html#compression_header
+            out_buffer_stream.writer().writeStruct(std.elf.Chdr{
+                .ch_type = .ZLIB,
+                .ch_size = content.len, // uncompressed size
+                .ch_addralign = section.header.sh_addralign, // uncompressed alignment
+            }) catch |err| fatal(
+                "failed writing section compression header '{s}': {s}",
+                .{ name, @errorName(err) },
+            );
+
             std.compress.zlib.compress(in_buffer_stream.reader(), out_buffer_stream.writer(), .{}) catch |err| fatal(
                 "failed compressing section content '{s}': {s}",
                 .{ name, @errorName(err) },
@@ -347,7 +359,6 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             }
             std.log.debug("compressed section '{s}' from {d} to {d} bytes", .{ name, content.len, compressed_subset.len });
 
-            // TODO: change header to std.elf.Chdr
             section.header.sh_flags |= std.elf.SHF_COMPRESSED;
 
             elf.updateSectionContent(section.handle, compressed_subset) catch |err| fatal(

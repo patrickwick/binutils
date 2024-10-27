@@ -169,16 +169,15 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
             for (elf.sections.items) |*section| {
-                const name = elf.getSectionName(section);
-
-                // TODO: check if any other sections links to this section transitively
-
                 // TODO: is the name sufficient?
-                if (std.mem.startsWith(u8, name, ".debug_")) {
-                    std.log.debug("Stripping debug section '{s}'", .{name});
-                    elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
-                    break;
-                }
+                const name = elf.getSectionName(section);
+                if (!std.mem.startsWith(u8, name, ".debug_")) continue;
+
+                // TODO: check if any kept section links to this section transitively
+
+                std.log.debug("Stripping debug section '{s}'", .{name});
+                elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
+                break; // restart iteration after modification
             } else break;
         }
 
@@ -202,7 +201,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                     else => {},
                 }
 
-                // TODO: check if any other sections links to this section transitively
+                // TODO: check if any kept section links to this section transitively
 
                 const name = elf.getSectionName(section);
                 std.log.debug("Stripping section '{s}'", .{name});
@@ -219,24 +218,21 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
             for (elf.sections.items) |*section| {
-                const name = elf.getSectionName(section);
-
                 // TODO: is the name sufficient?
-                const not_debug = !std.mem.startsWith(u8, name, ".debug_");
+                const name = elf.getSectionName(section);
+                if (std.mem.startsWith(u8, name, ".debug_")) continue;
 
-                // TODO: check if any other sections links to this section transitively
-
-                const remove = switch (section.header.sh_type) {
-                    std.elf.SHT_SYMTAB => false,
-                    std.elf.SHT_STRTAB => false,
-                    else => not_debug,
-                };
-
-                if (remove) {
-                    std.log.debug("Stripping non-debug section '{s}'", .{name});
-                    elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
-                    break;
+                // keep symbol and string tables
+                switch (section.header.sh_type) {
+                    std.elf.SHT_SYMTAB, std.elf.SHT_STRTAB => continue,
+                    else => {},
                 }
+
+                // TODO: check if any kept section links to this section transitively
+
+                std.log.debug("Stripping non-debug section '{s}'", .{name});
+                elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
+                break; // restart iteration after modification
             } else break;
         }
 

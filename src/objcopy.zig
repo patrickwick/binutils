@@ -170,9 +170,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
             for (elf.sections.items) |*section| {
-                // TODO: is the name sufficient?
+                if (!elf.isDebugSection(section)) continue;
+
                 const name = elf.getSectionName(section);
-                if (!std.mem.startsWith(u8, name, ".debug_")) continue;
 
                 // TODO: check if any kept section links to this section transitively
 
@@ -219,9 +219,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
             for (elf.sections.items) |*section| {
-                // TODO: is the name sufficient?
+                if (elf.isDebugSection(section)) continue;
+
                 const name = elf.getSectionName(section);
-                if (std.mem.startsWith(u8, name, ".debug_")) continue;
 
                 // keep symbol and string tables
                 switch (section.header.sh_type) {
@@ -311,10 +311,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     // --compress-debug-sections
     if (options.compress_debug_sections) {
         for (elf.sections.items) |*section| {
-            // TODO: is the name sufficient?
-            // TODO: add isDebugSection function
+            if (!elf.isDebugSection(section)) continue;
+
             const name = elf.getSectionName(section);
-            if (!std.mem.startsWith(u8, name, ".debug_")) continue;
 
             if ((section.header.sh_flags & std.elf.SHF_COMPRESSED) != 0) {
                 std.log.debug("Skipping already compresed debug section: '{s}'", .{name});

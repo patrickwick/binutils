@@ -822,6 +822,12 @@ pub fn getSection(self: *const @This(), handle: Section.Handle) ?*Section {
     } else null;
 }
 
+pub inline fn isDebugSection(self: *const @This(), section: *const Section) bool {
+    const name = self.getSectionName(section);
+    // TODO: is the name sufficient?
+    return std.mem.startsWith(u8, name, ".debug_");
+}
+
 inline fn isStringTable(section_header: std.elf.Shdr) bool {
     return section_header.sh_type == std.elf.SHT_STRTAB;
 }

@@ -310,7 +310,20 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
     // --compress-debug-sections
     if (options.compress_debug_sections) {
-        _ = options.compress_debug_sections; // TODO
+        for (elf.sections.items) |*section| {
+            // TODO: is the name sufficient?
+            // TODO: add isDebugSection function
+            const name = elf.getSectionName(section);
+            if (!std.mem.startsWith(u8, name, ".debug_")) continue;
+
+            std.log.debug("Compressing debug section '{s}'", .{name});
+            const compressed = [_]u8{}; // TODO
+
+            elf.updateSectionContent(section.handle, &compressed) catch |err| fatal(
+                "failed updating section content '{s}': {s}",
+                .{ name, @errorName(err) },
+            );
+        }
     }
 
     // --set-section-alignment

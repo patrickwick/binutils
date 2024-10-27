@@ -133,7 +133,6 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
         else => |abi| @tagName(abi),
     };
 
-    // TODO: extract function
     const file_type = switch (elf.e_type) {
         .DYN => "DYN (Position-Independent Executable file)",
         // TODO: add all verbose names
@@ -227,7 +226,6 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
     );
 
     for (elf.sections.items, 0..) |*section, i| {
-        // TODO: extract function
         const type_name = switch (section.header.sh_type) {
             std.elf.SHT_NULL => "NULL",
             std.elf.SHT_PROGBITS => "PROGBITS",
@@ -285,7 +283,6 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         std.mem.reverse(u8, &entry_size_bytes);
         const entry_size_hex = std.fmt.bytesToHex(entry_size_bytes, .lower);
 
-        // TODO: extract function?
         const flags = flags: {
             var f = [_]u8{' '} ** 3;
             var offset: u8 = 0;

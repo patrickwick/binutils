@@ -16,6 +16,7 @@ all:
 	${MAKE} objcopy-strip-debug
 	${MAKE} objcopy-only-keep-debug
 	${MAKE} objcopy-strip-all
+	${MAKE} objcopy-compress-debug
 
 .PHONY: release
 release:
@@ -124,3 +125,12 @@ objcopy-strip-all: ./reproduction/ls
 	./reproduction/binutils_strip_all --help
 	@du -h ./reproduction/binutils
 	@du -h ./reproduction/binutils_strip_all
+
+.PHONY: objcopy-compress-debug
+objcopy-compress-debug: ./reproduction/ls
+	cp ./zig-out/bin/binutils ./reproduction/binutils
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_compress_debug --compress-debug-sections
+	zig build run -- readelf ./reproduction/binutils_compress_debug -hSl
+	./reproduction/binutils_compress_debug --help
+	@du -h ./reproduction/binutils
+	@du -h ./reproduction/binutils_compress_debug

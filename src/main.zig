@@ -56,7 +56,11 @@ const Command = union(enum) {
 };
 
 fn parseCommand(out: std.io.AnyWriter, args: []const []const u8) Command {
-    if (args.len < 1) fatalPrintUsage(out, "command argument required", .{}); // TODO: or printUsage and exit(0)?
+    if (args.len < 1) {
+        printUsage(out);
+        std.process.exit(0);
+    }
+
     const command = args[0];
     if (std.mem.eql(u8, command, "readelf")) return Command{ .readelf = parseReadElf(out, args[1..]) };
     if (std.mem.eql(u8, command, "objdump")) return Command{ .objdump = parseObjDump(out, args[1..]) };

@@ -93,15 +93,8 @@ pub const Section = struct {
 
     // unique handle to identify the section without comparing names
     handle: Handle,
-
-    // TODO: sh_name, sh_offset and sh_size may go out of sync and are fixed during processing. Is this avoidable?
-    // * sh_name: if any section name before was changed / removed / added
-    // * sh_offset: if any section content before was resized, have updated alignment or are reordered
-    // * sh_size: section content is overwritten
-    // => could extract functions on these operations to always update all sections immediately or store the affected fields separately
     header: std.elf.Shdr,
     content: ContentSource,
-
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *@This()) void {

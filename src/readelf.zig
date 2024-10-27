@@ -387,8 +387,8 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
 }
 
 fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
-    // TODO: extract function
     const file_type = switch (elf.e_type) {
+        .EXEC => "EXEC (Executable file)",
         .DYN => "DYN (Position-Independent Executable file)",
         // TODO: add all verbose names
         else => |file_type| @tagName(file_type),
@@ -406,7 +406,6 @@ fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
     , .{ file_type, elf.e_entry, elf.e_phnum, elf.e_phoff });
 
     for (elf.program_segments.items) |program_segment| {
-        // TODO: extract function
         const program_header_type = switch (program_segment.program_header.p_type) {
             std.elf.PT_NULL => "NULL",
             std.elf.PT_LOAD => "LOAD",
@@ -485,9 +484,19 @@ fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         try out.writeByte('\n');
     }
 
-    // TODO: sections not mapped
-    // try out.writeAll("    None  TODO: NYI");
-    // try out.writeByte('\n');
+    // sections not mapped
+    try out.writeAll("    None  ");
+    for (elf.sections.items) |*section| {
+        const is_mapped = mapped: for (elf.program_segments.items) |segment| {
+            for (segment.segment_mapping.items) |handle| if (section.handle == handle) break :mapped true;
+        } else false;
+
+        if (!is_mapped) {
+            const name = elf.getSectionName(section);
+            if (name.len > 0) try out.print("{s} ", .{name});
+        }
+    }
+    try out.writeByte('\n');
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {

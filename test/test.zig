@@ -53,3 +53,14 @@ test "objcopy --add-section .new_section_abc123=./hello_world" {
         try std.testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, ".new_section_abc123 PROGBITS"));
     }
 }
+
+// TODO: consider adding fuzz tests over the CLI arguments
+test "fuzz" {
+    const global = struct {
+        fn testOne(input: []const u8) anyerror!void {
+            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
+            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
+        }
+    };
+    try std.testing.fuzz(global.testOne, .{});
+}

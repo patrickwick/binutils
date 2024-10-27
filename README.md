@@ -3,7 +3,7 @@
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
 
-## Command Line Usage
+## Usage
 
 ```
 Usage: binutils command [options]
@@ -89,22 +89,6 @@ General Options:
   -h, --help
       Print command-specific usage
 ```
-
-## Build File Usage
-
-All operations that are available through the command line can be directly called from an `build.zig`.
-There are additional convencience functions that combine multiple operations.
-
-The `build.zig.zon` dependency can be setup like this:
-`TODO`
-
-### Readelf Usage
-
-**TODO**
-
-### Objcopy Usage
-
-**TODO**
 
 ## Limitations
 

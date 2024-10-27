@@ -22,64 +22,12 @@ pub const EIdent = struct {
 
     pub const AbiVersion = u8;
 
-    // NOTE: copied from 0.14.0 lib/std/elf.zig for 0.13.0 backport
-    pub const OSABI = enum(u8) {
-        /// UNIX System V ABI
-        NONE = 0,
-        /// HP-UX operating system
-        HPUX = 1,
-        /// NetBSD
-        NETBSD = 2,
-        /// GNU (Hurd/Linux)
-        GNU = 3,
-        /// Solaris
-        SOLARIS = 6,
-        /// AIX
-        AIX = 7,
-        /// IRIX
-        IRIX = 8,
-        /// FreeBSD
-        FREEBSD = 9,
-        /// TRU64 UNIX
-        TRU64 = 10,
-        /// Novell Modesto
-        MODESTO = 11,
-        /// OpenBSD
-        OPENBSD = 12,
-        /// OpenVMS
-        OPENVMS = 13,
-        /// Hewlett-Packard Non-Stop Kernel
-        NSK = 14,
-        /// AROS
-        AROS = 15,
-        /// FenixOS
-        FENIXOS = 16,
-        /// Nuxi CloudABI
-        CLOUDABI = 17,
-        /// Stratus Technologies OpenVOS
-        OPENVOS = 18,
-        /// NVIDIA CUDA architecture
-        CUDA = 51,
-        /// AMD HSA Runtime
-        AMDGPU_HSA = 64,
-        /// AMD PAL Runtime
-        AMDGPU_PAL = 65,
-        /// AMD Mesa3D Runtime
-        AMDGPU_MESA3D = 66,
-        /// ARM
-        ARM = 97,
-        /// Standalone (embedded) application
-        STANDALONE = 255,
-
-        _,
-    };
-
     ei_class: Class,
     ei_data: std.builtin.Endian,
 
     // ELF specification version
     ei_version: Version,
-    ei_osabi: OSABI,
+    ei_osabi: std.elf.OSABI,
     ei_abiversion: AbiVersion,
 
     pub fn toBuffer(self: *const @This()) [std.elf.EI_NIDENT]u8 {
@@ -254,9 +202,6 @@ allocator: std.mem.Allocator,
 pub fn init(
     allocator: std.mem.Allocator,
     header: std.elf.Header,
-    os_abi: EIdent.OSABI, // NOTE: will be part of std.elf.Header from 0.14.0 on
-    abi_version: EIdent.AbiVersion, // NOTE: will be part of std.elf.Header from 0.14.0 on
-    e_type: std.elf.ET, // NOTE: will be part of std.elf.Header from 0.14.0 on
     ei_version: Version,
     e_version: Version,
     sections: Sections,
@@ -268,10 +213,10 @@ pub fn init(
             .ei_class = if (header.is_64) .elfclass64 else .elfclass32,
             .ei_data = header.endian,
             .ei_version = ei_version,
-            .ei_osabi = os_abi,
-            .ei_abiversion = abi_version,
+            .ei_osabi = header.os_abi,
+            .ei_abiversion = header.abi_version,
         },
-        .e_type = e_type, // NOTE: will be part of std.elf.Header from 0.14.0 on
+        .e_type = header.type,
         .e_machine = header.machine,
         .e_version = e_version,
         .e_entry = header.entry,
@@ -748,20 +693,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     const ei_version = std.meta.intToEnum(Version, e_ident[std.elf.EI_VERSION]) catch return error.UnrecognizedElfVersion;
     const e_version = .ev_current;
 
-    const OS_ABI_OFFSET = 7;
-    const ei_os_abi = std.meta.intToEnum(EIdent.OSABI, e_ident[OS_ABI_OFFSET]) catch return error.UnrecognizedOsAbi;
-
-    const ABI_VERSION_OFFSET = 8;
-    const ei_abi_version: EIdent.AbiVersion = @intCast(e_ident[ABI_VERSION_OFFSET]);
-
     const header = try std.elf.Header.read(source);
-
-    const e_type = e_type: {
-        const E_TYPE_OFFSET = 16; // offset is 0x10 for both 32bit and 64bit ELF files
-        try source.seekableStream().seekTo(E_TYPE_OFFSET);
-        const e_type_raw = try source.reader().readInt(u16, header.endian);
-        break :e_type std.meta.intToEnum(std.elf.ET, e_type_raw) catch return error.UnrecognizedFileType;
-    };
 
     var sections = Sections.init(allocator);
     errdefer {
@@ -851,15 +783,6 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 const section_start = section.header.sh_offset;
                 const section_end = section_start + section.header.sh_size;
 
-                if (segment_end <= segment_start) {
-                    std.log.warn("unexpected segment {d}. Start must be greater than end offset, got 0x{x}-0x{x}", .{
-                        segment_i,
-                        segment_start,
-                        segment_end,
-                    });
-                    continue;
-                }
-
                 // NOTE: limitation: rejects input if program header loads a subset of a section
                 // * start is between section start and end but end is not after section end
                 // * end is between section start and end but start is not before section start
@@ -881,17 +804,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         });
     }
 
-    const elf = try @This().init(
-        allocator,
-        header,
-        ei_os_abi,
-        ei_abi_version,
-        e_type,
-        ei_version,
-        e_version,
-        sections,
-        program_segments,
-    );
+    const elf = try @This().init(allocator, header, ei_version, e_version, sections, program_segments);
     try elf.validate();
     return elf;
 }
@@ -1019,7 +932,7 @@ fn createTestElfBuffer() ![256]u8 {
     ++ [_]u8{std.elf.ELFCLASS64} // EI_CLASS
     ++ [_]u8{std.elf.ELFDATA2LSB} // EI_DATA
     ++ [_]u8{@intFromEnum(Version.ev_current)} // EI_VERSION
-    ++ [_]u8{@intFromEnum(EIdent.OSABI.GNU)} // EI_OSABI
+    ++ [_]u8{@intFromEnum(std.elf.OSABI.GNU)} // EI_OSABI
     ++ [_]u8{0} // EI_ABIVERSION
     ++ [_]u8{0} ** 7; // EI_PAD
 

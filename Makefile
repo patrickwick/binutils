@@ -104,6 +104,8 @@ objcopy-strip-debug: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_strip_debug --strip-debug
 	zig build run -- readelf ./reproduction/binutils_strip_debug -hSl
 	./reproduction/binutils_strip_debug --help
+	@du -h ./reproduction/binutils
+	@du -h ./reproduction/binutils_strip_debug
 
 .PHONY: objcopy-only-keep-debug
 objcopy-only-keep-debug: ./reproduction/ls
@@ -111,6 +113,8 @@ objcopy-only-keep-debug: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_only_keep_debug --only-keep-debug
 	zig build run -- readelf ./reproduction/binutils_only_keep_debug -hSl
 	readelf ./reproduction/binutils_only_keep_debug -S
+	@du -h ./reproduction/binutils
+	@du -h ./reproduction/binutils_only_keep_debug
 
 .PHONY: objcopy-strip-all
 objcopy-strip-all: ./reproduction/ls
@@ -118,3 +122,5 @@ objcopy-strip-all: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_strip_all --strip-all
 	zig build run -- readelf ./reproduction/binutils_strip_all -hSl
 	./reproduction/binutils_strip_all --help
+	@du -h ./reproduction/binutils
+	@du -h ./reproduction/binutils_strip_all

@@ -388,8 +388,6 @@ pub fn fixup(self: *@This()) !void {
         }
     }
 
-    // TODO: update section to segment mapping
-
     // TODO: update symbol table st_shndx if the index has changed (used to reference section names for STT_SECTION)
 }
 
@@ -564,7 +562,8 @@ pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
     // TODO: update sh_name for removed name
     // TODO: remove symtab .section entries
 
-    try self.fixup();
+    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
+    // try self.fixup(); // NOTE: fixup should not be required
 }
 
 // Precondition: shstrtab is located in sections at index e_shstrndx

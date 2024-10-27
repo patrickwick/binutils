@@ -59,7 +59,7 @@ pub const Section = struct {
     pub const NoBits = void;
 
     // new data written into new sections that did not exist in the input
-    pub const Data = []const u8;
+    pub const Data = []u8;
 
     /// Section contents have different sources and are only loaded and copied on demand.
     /// For example, appending data to a section from the input file converts it from a file range to a modified heap allocated copy of the input section.
@@ -112,7 +112,7 @@ pub const Section = struct {
     }
 
     // FIXME: passing the allocator is pointless here since the deinit is already bound to the allocator stored in the struct
-    pub fn readContent(self: *@This(), input: anytype, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn readContent(self: *@This(), input: anytype, allocator: std.mem.Allocator) ![]u8 {
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
@@ -259,9 +259,7 @@ pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
     return self.section_handle_counter;
 }
 
-// TODO: critical function => must be well tested
-// TODO: add markdown documentation on what variants need to hold and are violated by which operation?
-pub fn fixup(self: *@This()) !void {
+fn fixup(self: *@This()) !void {
     // relocate headers and sections contents due to size increase if needed
     var sorted_sections = try self.sections.clone();
     defer sorted_sections.deinit();
@@ -391,7 +389,7 @@ pub fn fixup(self: *@This()) !void {
     // TODO: update symbol table st_shndx if the index has changed (used to reference section names for STT_SECTION)
 }
 
-pub fn validate(self: *const @This()) !void {
+fn validate(self: *const @This()) !void {
     var sorted_sections = try self.sections.clone();
     defer sorted_sections.deinit();
 
@@ -519,6 +517,31 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     // overwrite offset again after fixup since the new header was not accounted
     try self.fixup();
     self.sections.items[self.sections.items.len - 1].header.sh_offset = self.getMaximumFileOffset();
+}
+
+pub fn updateSectionContent(self: *@This(), handle: Section.Handle, content: []u8) !void {
+    for (self.sections.items) |*section| {
+        if (section.handle == handle) {
+            section.content = .{ .data_allocated = content };
+            section.header.sh_size = content.len;
+            try self.fixup();
+            break;
+        }
+    } else return error.SectionNotFound;
+}
+
+pub fn updateSectionAlignment(self: *@This(), handle: Section.Handle, alignment: usize) !void {
+    if (!std.math.isPowerOfTwo(alignment)) {
+        fatal("section alignment must be a power of two, got {d}", .{alignment});
+    }
+
+    for (self.sections.items) |*section| {
+        if (section.handle == handle) {
+            section.header.sh_addralign = @intCast(alignment);
+            try self.fixup();
+            break;
+        }
+    } else return error.SectionNotFound;
 }
 
 fn getMaximumFileOffset(self: *const @This()) usize {

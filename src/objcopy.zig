@@ -157,8 +157,22 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         const section = &sorted.items[sorted.items.len - 1];
         const end = section.header.sh_offset + section.header.sh_size;
         if (pad_to.address > end) {
-            section.header.sh_size += pad_to.address - end;
-            elf.fixup() catch |err| fatal("failed increasing section size: {s}", .{@errorName(err)});
+            const old_content: []u8 = section.readContent(in_file, allocator) catch |err| fatal(
+                "failed reading section content of '{s}': {s}",
+                .{ elf.getSectionName(section), @errorName(err) },
+            );
+
+            const new_size = end - section.header.sh_offset;
+            var new_content = allocator.realloc(old_content, new_size) catch |err| fatal(
+                "failed reallocating section content of '{s}' from {d} to {d} bytes: {s}",
+                .{ elf.getSectionName(section), old_content.len, new_size, @errorName(err) },
+            );
+            @memset(new_content[old_content.len..], 0);
+
+            elf.updateSectionContent(section.handle, new_content) catch |err| fatal(
+                "failed updating section content of '{s}': {s}",
+                .{ elf.getSectionName(section), @errorName(err) },
+            );
         } else {
             std.log.info("section end 0x{x} already exceeds address 0x{x}", .{ end, pad_to.address });
         }
@@ -290,8 +304,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
         const name = ".gnu_debuglink";
         if (elf.getSectionByName(name)) |section| {
-            section.content = .{ .data_allocated = link_content };
-            elf.fixup() catch |err| fatal(
+            elf.updateSectionContent(section.handle, link_content) catch |err| fatal(
                 "failed overwriting .gnu_debuglink: {s}",
                 .{@errorName(err)},
             );
@@ -324,8 +337,10 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             if (std.mem.eql(u8, name, set_section_alignment.section_name)) break section;
         } else fatal("uknown section '{s}'", .{set_section_alignment.section_name});
 
-        section.header.sh_addralign = @intCast(set_section_alignment.alignment);
-        elf.fixup() catch |err| fatal("failed overwriting section alignment: {s}", .{@errorName(err)});
+        elf.updateSectionAlignment(section.handle, set_section_alignment.alignment) catch |err| fatal(
+            "failed overwriting section alignment: {s}",
+            .{@errorName(err)},
+        );
     }
 
     // --set-section-flags
@@ -370,8 +385,6 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         // strings: add SHF_STRINGS
         if (f.merge) s.header.sh_flags |= std.elf.SHF_MERGE;
         if (f.strings) s.header.sh_flags |= std.elf.SHF_STRINGS;
-
-        elf.fixup() catch |err| fatal("failed overwriting section flags: {s}", .{@errorName(err)});
     }
 
     // --add-section

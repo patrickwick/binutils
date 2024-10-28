@@ -195,8 +195,10 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 } else false;
                 if (is_mapped) continue;
 
-                // keep symbol and string tables
+                // keep string tables
                 switch (section.header.sh_type) {
+                    // TODO: keep .comment section
+                    // TODO: also remove symtabs
                     std.elf.SHT_SYMTAB, std.elf.SHT_STRTAB => continue,
                     else => {},
                 }
@@ -215,6 +217,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
     // --only-keep-debug
     if (options.only_keep_debug) {
+        if (options.strip_all) fatal("cannot use --only-keep-debug in combination with --strip-all", .{});
+        if (options.strip_debug) fatal("cannot use --only-keep-debug in combination with --strip-debug", .{});
+
         // double loop since iteration needs to be restarted on modified array
         while (true) {
             for (elf.sections.items) |*section| {
@@ -449,6 +454,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         );
     }
 
+    std.log.debug("writing ELF output to '{s}'", .{options.out_file_path});
     elf.write(allocator, in_file, out_file) catch |err| fatal(
         "failed writing output '{s}': {s}",
         .{ options.out_file_path, @errorName(err) },

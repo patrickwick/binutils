@@ -1,12 +1,14 @@
 const std = @import("std");
 
+const binutils = @import("src/binutils.zig");
+
 const USE_LLVM = false;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // exe
+    // Command line executable
     const exe = target: {
         const exe = b.addExecutable(.{
             .name = "binutils",
@@ -44,12 +46,14 @@ pub fn build(b: *std.Build) void {
 
     // integration tests
     {
+        const TEST_DIR = "test";
+
         const integration_test_step = b.step("test_integration", "Run integration tests");
         integration_test_step.dependOn(&exe.step);
         integration_test_step.dependOn(b.getInstallStep());
 
         const integration_test_exe = b.addTest(.{
-            .root_source_file = b.path("test/test.zig"),
+            .root_source_file = b.path(TEST_DIR ++ "/test.zig"),
             .target = target,
             .optimize = optimize,
             .use_llvm = USE_LLVM,
@@ -61,12 +65,24 @@ pub fn build(b: *std.Build) void {
 
         const hello_world_exe = b.addExecutable(.{
             .name = "hello_world",
-            .root_source_file = b.path("test/hello_world.zig"),
+            .root_source_file = b.path(TEST_DIR ++ "/hello_world.zig"),
             .target = target,
             .optimize = optimize,
             .use_llvm = USE_LLVM,
         });
         const hello_world_install = b.addInstallArtifact(hello_world_exe, .{ .dest_dir = destination_dir });
         integration_test_exe.step.dependOn(&hello_world_install.step);
+
+        // objcopy step
+        const strip_all = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
+            .strip = .debug,
+        });
+
+        const strip_all_install = b.addInstallFileWithDir(
+            strip_all.getOutput(),
+            .{ .custom = TEST_DIR },
+            "hello_world_strip_all",
+        );
+        integration_test_step.dependOn(&strip_all_install.step);
     }
 }

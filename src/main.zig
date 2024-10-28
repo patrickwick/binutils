@@ -786,7 +786,6 @@ test parseObjCopy {
     try t.expectEqualDeep(objcopy.ObjCopyOptions{
         .in_file_path = "./in",
         .out_file_path = "./out",
-        // TODO: does it make sense to allow both at the same time?
         .strip_debug = true,
         .strip_all = true,
     }, parseObjCopy(writer, &.{ "./in", "./out", "-gS" }));

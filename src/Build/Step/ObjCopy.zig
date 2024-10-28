@@ -12,6 +12,7 @@ input_file: std.Build.LazyPath,
 output_file: std.Build.GeneratedFile,
 options: Options,
 
+// TODO: add convenience split debug option as done in current zig objcopy
 pub const Options = struct {
     output_target: objcopy.OutputTarget = .elf,
     only_section: ?objcopy.OnlySectionOption = null,
@@ -58,40 +59,48 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
     const target: *ObjCopy = @fieldParentPtr("step", step);
     try step.singleUnchangingWatchInput(target.input_file);
 
-    var man = b.graph.cache.obtain();
-    defer man.deinit();
+    var manifest = b.graph.cache.obtain();
+    defer manifest.deinit();
 
     const in_file_path = target.input_file.getPath2(b, step);
-    _ = try man.addFile(in_file_path, null);
+    _ = try manifest.addFile(in_file_path, null);
 
-    // TODO: update hash
-    man.hash.add(target.options.output_target);
-    man.hash.add(target.options.only_section != null);
-    // man.hash.addOptional(target.options.only_section);
-    man.hash.add(target.options.pad_to != null);
-    // man.hash.addOptional(target.options.pad_to);
-    man.hash.add(target.options.strip_debug);
-    man.hash.add(target.options.strip_all);
-    man.hash.add(target.options.only_keep_debug);
-    man.hash.add(target.options.add_gnu_debuglink != null);
-    // man.hash.addOptional(target.options.add_gnu_debuglink);
-    man.hash.add(target.options.compress_debug_sections);
-    man.hash.add(target.options.set_section_alignment != null);
-    // man.hash.addOptional(target.options.set_section_alignment);
-    man.hash.add(target.options.set_section_flags != null);
-    // man.hash.addOptional(target.options.set_section_flags);
-    man.hash.add(target.options.add_section != null);
-    // man.hash.addOptional(target.options.add_section);
+    manifest.hash.add(target.options.output_target);
+    manifest.hash.add(target.options.only_section != null);
+    if (target.options.only_section) |o| manifest.hash.addBytes(o.section_name);
+    manifest.hash.add(target.options.pad_to != null);
+    if (target.options.pad_to) |o| manifest.hash.add(o.address);
+    manifest.hash.add(target.options.strip_debug);
+    manifest.hash.add(target.options.strip_all);
+    manifest.hash.add(target.options.only_keep_debug);
+    manifest.hash.add(target.options.add_gnu_debuglink != null);
+    if (target.options.add_gnu_debuglink) |o| manifest.hash.addBytes(o.link);
+    manifest.hash.add(target.options.compress_debug_sections);
+    manifest.hash.add(target.options.set_section_alignment != null);
+    if (target.options.set_section_alignment) |o| {
+        manifest.hash.addBytes(o.section_name);
+        manifest.hash.add(o.alignment);
+    }
+    manifest.hash.add(target.options.set_section_flags != null);
+    if (target.options.set_section_flags) |o| {
+        manifest.hash.addBytes(o.section_name);
+        manifest.hash.add(@as(u14, @bitCast(o.flags)));
+    }
+    manifest.hash.add(target.options.add_section != null);
+    if (target.options.add_section) |o| {
+        manifest.hash.addBytes(o.section_name);
+        manifest.hash.addBytes(o.file_path);
+    }
 
-    if (try step.cacheHit(&man)) {
-        const digest = man.final();
+    if (try step.cacheHit(&manifest)) {
+        const digest = manifest.final();
         // TODO: remove hardcoded "o" cache path if zig provides this
         const out_file_path = try b.cache_root.join(b.allocator, &.{ "o", &digest, target.input_file.getDisplayName() });
         target.output_file.path = out_file_path;
         return;
     }
 
-    const digest = man.final();
+    const digest = manifest.final();
     // TODO: remove hardcoded "o" cache path if zig provides this
     const out_file_dir = "o" ++ std.fs.path.sep_str ++ digest;
     b.cache_root.handle.makePath(out_file_dir) catch |err| {
@@ -116,6 +125,4 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         .set_section_flags = target.options.set_section_flags,
         .add_section = target.options.add_section,
     });
-
-    try man.writeManifest();
 }

@@ -3,7 +3,29 @@
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
 
-## Usage
+All features are available using the `build.zig` library or using the command line tool.
+
+## build.zig Usage
+
+```zig
+const exe = b.addExecutable(.{
+    .name = "exe",
+    .root_source_file = "exe.zig"),
+    .target = target,
+    .optimize = optimize,
+});
+b.installArtifact(exe);
+
+const exe_stripped = binutils.Build.Step.ObjCopy.create(b, exe.getEmittedBin(), .{
+    .strip_all = true,
+});
+const exe_stripped_install = b.addInstallBinFile(exe_stripped.getOutput(), "exe_stripped");
+b.getInstallStep().dependOn(&exe_stripped_install.step);
+```
+
+Please refer to [build.zig](build.zig) for more examples.
+
+## Command Line Usage
 
 ```
 Usage: binutils command [options]

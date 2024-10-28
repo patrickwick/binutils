@@ -73,9 +73,9 @@ pub fn build(b: *std.Build) void {
         const hello_world_install = b.addInstallArtifact(hello_world_exe, .{ .dest_dir = destination_dir });
         integration_test_exe.step.dependOn(&hello_world_install.step);
 
-        // objcopy step
+        // objcopy --strip-all
         const strip_all = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
-            .strip = .debug,
+            .strip_all = true,
         });
 
         const strip_all_install = b.addInstallFileWithDir(

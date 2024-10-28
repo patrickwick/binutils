@@ -1,5 +1,7 @@
 const std = @import("std");
 
+// TODO: build.zig depending on zon package should already work according to https://github.com/ziglang/zig/issues/14279
+// => add zon package for this wrapper
 const binutils = @import("src/binutils.zig");
 
 const USE_LLVM = false;
@@ -74,15 +76,29 @@ pub fn build(b: *std.Build) void {
         integration_test_exe.step.dependOn(&hello_world_install.step);
 
         // objcopy --strip-all
-        const strip_all = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
-            .strip_all = true,
-        });
+        {
+            const name = "hello_world_strip_all";
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{ .strip_all = true });
+            const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
+            integration_test_step.dependOn(&objcopy_install.step);
+        }
 
-        const strip_all_install = b.addInstallFileWithDir(
-            strip_all.getOutput(),
-            .{ .custom = TEST_DIR },
-            "hello_world_strip_all",
-        );
-        integration_test_step.dependOn(&strip_all_install.step);
+        // objcopy --compress-debug
+        {
+            const name = "hello_world_compress_debug";
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{ .compress_debug_sections = true });
+            const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
+            integration_test_step.dependOn(&objcopy_install.step);
+        }
+
+        // objcopy --only-keep-debug
+        {
+            const name = "hello_world_only_keep_debug";
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{ .only_keep_debug = true });
+            const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
+            integration_test_step.dependOn(&objcopy_install.step);
+        }
+
+        // TODO: add convenience split debug option as done in current zig objcopy
     }
 }

@@ -20,12 +20,15 @@ pub const ObjCopyOptions = struct {
     set_section_alignment: ?SetSectionAlignmentOption = null,
     set_section_flags: ?SetSectionFlagsOption = null,
     add_section: ?AddSectionOption = null,
+    // TODO: add --extract-to option again for backward compatibility
+    // extract_to: ?ExtractToOption = null,
 };
 
+// TODO: see original discussion https://github.com/ziglang/zig/issues/2826
 pub const OutputTarget = enum {
     elf,
-    raw,
-    hex,
+    raw, // equivalent to gnu objcopy -O binary
+    hex, // Intel hex format (ihex)
 };
 
 pub const PadToOption = struct {
@@ -103,6 +106,9 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         .{ options.out_file_path, @errorName(err) },
     );
     defer out_file.close();
+
+    // TODO: --extract-to
+    // copy sections before modifications then write the removed sections at the end to the separate file
 
     // -O, --output_target
     switch (options.output_target) {

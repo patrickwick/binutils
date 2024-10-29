@@ -53,3 +53,7 @@ test "objcopy --add-section .new_section_abc123=./hello_world" {
         try std.testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, ".new_section_abc123 PROGBITS"));
     }
 }
+
+// TODO: use zig objcopy to verify backward compatibility
+
+// TODO: use eu-elflint for validation?

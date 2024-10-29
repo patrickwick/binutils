@@ -24,7 +24,7 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
 
     if (options.file_header) printElfHeader(out.writer().any(), &elf) catch |err| fatal("failed printing ELF header: {s}", .{@errorName(err)});
     if (options.section_headers) printElfSectionHeaders(out.writer().any(), &elf) catch |err| fatal("failed printing ELF section headers: {s}", .{@errorName(err)});
-    if (options.program_headers) printElfProgramHeaders(out.writer().any(), &elf) catch |err| fatal("failed printing program headers: {s}", .{@errorName(err)});
+    if (options.program_headers) printElfProgramHeaders(file, out.writer().any(), &elf) catch |err| fatal("failed printing program headers: {s}", .{@errorName(err)});
     if (options.symbols) printSymbols(file, out.writer().any(), &elf) catch |err| fatal("failed printing symbol table: {s}", .{@errorName(err)});
 }
 
@@ -383,7 +383,7 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
     );
 }
 
-fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
+fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !void {
     const file_type = switch (elf.e_type) {
         .EXEC => "EXEC (Executable file)",
         .DYN => "DYN (Position-Independent Executable file)",
@@ -451,13 +451,24 @@ fn printElfProgramHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
             .{ offset_hex, virtual_address_hex, physical_address_hex, file_size_hex, memory_size_hex },
         );
 
-        // TODO: program interpreter
-        // if (program_segment.program_header.p_type == std.elf.PT_INTERP) {
-        //     try out.print(
-        //         \\
-        //         \\      [Requesting program interpreter: {s}]
-        //     , .{"TODO: NYI"});
-        // }
+        if (program_segment.program_header.p_type == std.elf.PT_INTERP) {
+            for (program_segment.segment_mapping.items, 0..) |mapping, i| {
+                const section = elf.getSection(mapping) orelse fatal(
+                    "corrupt section to segment mapping: segment {d} references non existing section handle {d}",
+                    .{ i, mapping },
+                );
+
+                const content = section.readContent(in, elf.allocator) catch |err| fatal(
+                    "failed reading '{s}' section content: {s}",
+                    .{ elf.getSectionName(section), @errorName(err) },
+                );
+
+                try out.print(
+                    \\
+                    \\      [Requesting program interpreter: {s}]
+                , .{content});
+            }
+        }
         try out.writeByte('\n');
     }
 

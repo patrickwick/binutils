@@ -78,7 +78,9 @@ pub fn build(b: *std.Build) void {
         // objcopy --strip-all
         {
             const name = "hello_world_strip_all";
-            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{ .strip_all = true });
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
+                .strip_all = true,
+            });
             const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
             integration_test_step.dependOn(&objcopy_install.step);
         }
@@ -86,7 +88,9 @@ pub fn build(b: *std.Build) void {
         // objcopy --compress-debug
         {
             const name = "hello_world_compress_debug";
-            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{ .compress_debug_sections = true });
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
+                .compress_debug_sections = true,
+            });
             const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
             integration_test_step.dependOn(&objcopy_install.step);
         }
@@ -94,10 +98,26 @@ pub fn build(b: *std.Build) void {
         // objcopy --only-keep-debug
         {
             const name = "hello_world_only_keep_debug";
-            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{ .only_keep_debug = true });
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
+                .only_keep_debug = true,
+            });
             const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
             integration_test_step.dependOn(&objcopy_install.step);
         }
+
+        // objcopy --only-keep-debug
+        // {
+        //     const name = "hello_world_add_section";
+        //     const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
+        //         .add_section = .{
+        //             .section_name = ".abc123",
+        //             // FIXME: needs to make sure the binary is written before getting the path
+        //             .file_path = hello_world_exe.getEmittedBin(),
+        //         },
+        //     });
+        //     const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
+        //     integration_test_step.dependOn(&objcopy_install.step);
+        // }
 
         // TODO: add convenience split debug option as done in current zig objcopy
     }

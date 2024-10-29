@@ -93,17 +93,17 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         manifest.hash.addBytes(o.file_path);
     }
 
+    const CACHE_BIN_DIR_PREFIX = "o"; // hardcoded in a few places in zig std.lib, did not find constant
+
     if (try step.cacheHit(&manifest)) {
         const digest = manifest.final();
-        // TODO: remove hardcoded "o" cache path if zig provides this
-        const out_file_path = try b.cache_root.join(b.allocator, &.{ "o", &digest, target.input_file.getDisplayName() });
+        const out_file_path = try b.cache_root.join(b.allocator, &.{ CACHE_BIN_DIR_PREFIX, &digest, target.input_file.getDisplayName() });
         target.output_file.path = out_file_path;
         return;
     }
 
     const digest = manifest.final();
-    // TODO: remove hardcoded "o" cache path if zig provides this
-    const out_file_dir = "o" ++ std.fs.path.sep_str ++ digest;
+    const out_file_dir = CACHE_BIN_DIR_PREFIX ++ std.fs.path.sep_str ++ digest;
     b.cache_root.handle.makePath(out_file_dir) catch |err| {
         return step.fail("unable to make path {s}: {s}", .{ out_file_dir, @errorName(err) });
     };

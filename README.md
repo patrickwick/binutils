@@ -123,6 +123,7 @@ General Options:
     * Mach-O maybe at some point
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
 * not tested: running objcopy on a 32bit system on 64bit ELF files. It should work but may not
+* OS or processor specific ELF types (std.elf.ET) are not supported (std.elf.ET is exhaustive, so the parser would need to be replaced)
 
 ### Current Zig Limitations
 

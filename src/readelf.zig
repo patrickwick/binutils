@@ -133,12 +133,6 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
         else => |abi| @tagName(abi),
     };
 
-    const file_type = switch (elf.e_type) {
-        .DYN => "DYN (Position-Independent Executable file)",
-        // TODO: add all verbose names
-        else => |file_type| @tagName(file_type),
-    };
-
     const machine = switch (elf.e_machine) {
         .X86_64 => "Advanced Micro Devices X86-64",
         // TODO: add all verbose names
@@ -179,7 +173,7 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
         version,
         os_abi,
         elf.e_ident.ei_abiversion,
-        file_type,
+        verboseFileType(elf.e_type),
         machine,
         @intFromEnum(elf.e_version),
         elf.e_entry,
@@ -365,14 +359,17 @@ inline fn intToHex(data: anytype) [@sizeOf(@TypeOf(data)) * 2]u8 {
     return std.fmt.bytesToHex(bytes, .lower);
 }
 
-fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !void {
-    const file_type = switch (elf.e_type) {
+fn verboseFileType(e_type: std.elf.ET) []const u8 {
+    return switch (e_type) {
+        .NONE => "NONE (None)",
+        .REL => "REL (Relocatable file)",
         .EXEC => "EXEC (Executable file)",
-        .DYN => "DYN (Position-Independent Executable file)",
-        // TODO: add all verbose names
-        else => |file_type| @tagName(file_type),
+        .DYN => "DYN (Position-Independent Executable or shared object file)",
+        .CORE => "CORE (Core file)",
     };
+}
 
+fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !void {
     try out.print(
         \\
         \\Elf file type is {s}
@@ -382,7 +379,7 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
         \\Program Headers:
         \\Type             Offset     VirtAddr           PhysAddr           FileSiz    MemSiz
         \\
-    , .{ file_type, elf.e_entry, elf.e_phnum, elf.e_phoff });
+    , .{ verboseFileType(elf.e_type), elf.e_entry, elf.e_phnum, elf.e_phoff });
 
     for (elf.program_segments.items) |program_segment| {
         const h = program_segment.program_header;

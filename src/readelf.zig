@@ -215,18 +215,16 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
     );
     const correction = 3;
     try out.writeByteNTimes(' ', @max(correction, indentation) - correction);
-    // TODO: Lk Inf Al
-    // try out.writeAll(
-    //     \\Type          Address            Offset   Size     ES   Flg Lk Inf Al
-    //     \\
-    // );
+    // TODO: Add "Lk Inf Al"
     try out.writeAll(
-        \\Type          Address            Offset   Size     ES   Flg
+        \\Type          Address            Offset     Size       ES         Flg
         \\
     );
 
     for (elf.sections.items, 0..) |*section, i| {
-        const type_name = switch (section.header.sh_type) {
+        const h = section.header;
+
+        const type_name = switch (h.sh_type) {
             std.elf.SHT_NULL => "NULL",
             std.elf.SHT_PROGBITS => "PROGBITS",
             std.elf.SHT_SYMTAB => "SYMTAB",
@@ -265,95 +263,77 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         const type_indentation = 14;
         try out.writeByteNTimes(' ', type_indentation - type_name.len);
 
-        // TODO: extract function for fixed hex format
-        var address_bytes = (std.mem.toBytes(@as(u64, section.header.sh_addr))[0..8]).*;
-        std.mem.reverse(u8, &address_bytes);
-        const address_hex = std.fmt.bytesToHex(address_bytes, .lower);
-
-        // TODO: truncated if 64bit offset is above the 32bit limit
-        var offset_bytes = (std.mem.toBytes(section.header.sh_offset)[0..3]).*;
-        std.mem.reverse(u8, &offset_bytes);
-        const offset_hex = std.fmt.bytesToHex(offset_bytes, .lower);
-
-        var size_bytes = (std.mem.toBytes(section.header.sh_size)[0..3]).*;
-        std.mem.reverse(u8, &size_bytes);
-        const size_hex = std.fmt.bytesToHex(size_bytes, .lower);
-
-        var entry_size_bytes = (std.mem.toBytes(section.header.sh_entsize)[0..1]).*;
-        std.mem.reverse(u8, &entry_size_bytes);
-        const entry_size_hex = std.fmt.bytesToHex(entry_size_bytes, .lower);
-
         const flags = flags: {
             var f = [_]u8{' '} ** 3;
             var offset: u8 = 0;
 
             // sorted according to "Key to Flags" legend
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_WRITE) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_WRITE) != 0) {
                 f[offset] = 'W';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_ALLOC) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_ALLOC) != 0) {
                 f[offset] = 'A';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_EXECINSTR) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_EXECINSTR) != 0) {
                 f[offset] = 'X';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_MERGE) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_MERGE) != 0) {
                 f[offset] = 'M';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_STRINGS) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_STRINGS) != 0) {
                 f[offset] = 'S';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_INFO_LINK) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_INFO_LINK) != 0) {
                 f[offset] = 'I';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_LINK_ORDER) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_LINK_ORDER) != 0) {
                 f[offset] = 'L';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_OS_NONCONFORMING) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_OS_NONCONFORMING) != 0) {
                 f[offset] = 'O';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_GROUP) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_GROUP) != 0) {
                 f[offset] = 'G';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_TLS) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_TLS) != 0) {
                 f[offset] = 'T';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_COMPRESSED) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_COMPRESSED) != 0) {
                 f[offset] = 'C';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_EXCLUDE) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_EXCLUDE) != 0) {
                 f[offset] = 'E';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_GNU_RETAIN) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_GNU_RETAIN) != 0) {
                 f[offset] = 'R';
                 offset += 1;
             }
 
-            if (offset < f.len and (section.header.sh_flags & std.elf.SHF_X86_64_LARGE) != 0) {
+            if (offset < f.len and (h.sh_flags & std.elf.SHF_X86_64_LARGE) != 0) {
                 f[offset] = 'l';
                 offset += 1;
             }
@@ -362,16 +342,12 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         };
 
         try out.print("0x{s} 0x{s} 0x{s} 0x{s} {s}\n", .{
-            address_hex,
-            offset_hex,
-            size_hex,
-            entry_size_hex,
+            intToHex(h.sh_addr),
+            intToHex(@as(u32, @truncate(h.sh_offset))),
+            intToHex(@as(u32, @truncate(h.sh_size))),
+            intToHex(@as(u32, @truncate(h.sh_entsize))),
             flags,
         });
-
-        // TODO: links (Lk)
-        // TODO: info (Inf)
-        // TODO: alignment (Al)
     }
 
     try out.writeAll(
@@ -381,6 +357,12 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         \\  C (compressed), E (exclude), R (retain), l (large)
         \\
     );
+}
+
+inline fn intToHex(data: anytype) [@sizeOf(@TypeOf(data)) * 2]u8 {
+    var bytes = std.mem.toBytes(data);
+    std.mem.reverse(u8, &bytes);
+    return std.fmt.bytesToHex(bytes, .lower);
 }
 
 fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !void {
@@ -398,12 +380,14 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
         \\There are {d} program headers, starting at offset {d}
         \\
         \\Program Headers:
-        \\Type             Offset   VirtAddr           PhysAddr           FileSiz  MemSiz
+        \\Type             Offset     VirtAddr           PhysAddr           FileSiz    MemSiz
         \\
     , .{ file_type, elf.e_entry, elf.e_phnum, elf.e_phoff });
 
     for (elf.program_segments.items) |program_segment| {
-        const program_header_type = switch (program_segment.program_header.p_type) {
+        const h = program_segment.program_header;
+
+        const program_header_type = switch (h.p_type) {
             std.elf.PT_NULL => "NULL",
             std.elf.PT_LOAD => "LOAD",
             std.elf.PT_DYNAMIC => "DYNAMIC",
@@ -422,36 +406,19 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
             else => "UNKNOWN",
         };
 
-        // TODO: extract function for fixed hex format
-        var offset_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_offset))[0..3]).*;
-        std.mem.reverse(u8, &offset_bytes);
-        const offset_hex = std.fmt.bytesToHex(offset_bytes, .lower);
-
-        var virtual_address_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_vaddr))[0..8]).*;
-        std.mem.reverse(u8, &virtual_address_bytes);
-        const virtual_address_hex = std.fmt.bytesToHex(virtual_address_bytes, .lower);
-
-        var physical_address_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_paddr))[0..8]).*;
-        std.mem.reverse(u8, &physical_address_bytes);
-        const physical_address_hex = std.fmt.bytesToHex(virtual_address_bytes, .lower);
-
-        var file_size_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_filesz))[0..3]).*;
-        std.mem.reverse(u8, &file_size_bytes);
-        const file_size_hex = std.fmt.bytesToHex(file_size_bytes, .lower);
-
-        var memory_size_bytes = (std.mem.toBytes(@as(u64, program_segment.program_header.p_memsz))[0..3]).*;
-        std.mem.reverse(u8, &memory_size_bytes);
-        const memory_size_hex = std.fmt.bytesToHex(memory_size_bytes, .lower);
-
         try out.print("  {s}", .{program_header_type});
         const indentation = 15;
         try out.writeByteNTimes(' ', @max(indentation, program_header_type.len) - program_header_type.len);
-        try out.print(
-            "0x{s} 0x{s} 0x{s} 0x{s} 0x{s}",
-            .{ offset_hex, virtual_address_hex, physical_address_hex, file_size_hex, memory_size_hex },
-        );
 
-        if (program_segment.program_header.p_type == std.elf.PT_INTERP) {
+        try out.print("0x{s} 0x{s} 0x{s} 0x{s} 0x{s}", .{
+            intToHex(@as(u32, @truncate(h.p_offset))),
+            intToHex(h.p_vaddr),
+            intToHex(h.p_paddr),
+            intToHex(@as(u32, @truncate(h.p_filesz))),
+            intToHex(@as(u32, @truncate(h.p_memsz))),
+        });
+
+        if (h.p_type == std.elf.PT_INTERP) {
             for (program_segment.segment_mapping.items, 0..) |mapping, i| {
                 const section = elf.getSection(mapping) orelse fatal(
                     "corrupt section to segment mapping: segment {d} references non existing section handle {d}",
@@ -465,7 +432,7 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
 
                 try out.print(
                     \\
-                    \\      [Requesting program interpreter: {s}]
+                    \\    [Requesting program interpreter: {s}]
                 , .{content});
             }
         }

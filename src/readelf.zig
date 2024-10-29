@@ -129,15 +129,28 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
 
     const os_abi = switch (elf.e_ident.ei_osabi) {
         .NONE => "UNIX - System V",
-        // TODO: add all verbose names
+        .HPUX => "UNIX - HP-UX",
+        .NETBSD => "UNIX - NetBSD",
+        .GNU => "UNIX - GNU",
+        .SOLARIS => "UNIX - Solaris",
+        .AIX => "UNIX - AIX",
+        .IRIX => "UNIX - IRIX",
+        .FREEBSD => "UNIX - FreeBSD",
+        .TRU64 => "UNIX - TRU64",
+        .MODESTO => "Novell - Modesto",
+        .OPENBSD => "UNIX - OpenBSD",
+        .OPENVMS => "VMS - OpenVMS",
+        .NSK => "HP - Non-Stop Kernel",
+        .AROS => "AROS",
+        .FENIXOS => "FenixOS",
+        .CLOUDABI => "Nuxi CloudABI",
+        .OPENVOS => "Stratus Technologies OpenVOS",
+        .CUDA => "CUDA",
         else => |abi| @tagName(abi),
     };
 
-    const machine = switch (elf.e_machine) {
-        .X86_64 => "Advanced Micro Devices X86-64",
-        // TODO: add all verbose names
-        else => |machine| @tagName(machine),
-    };
+    // there are too many to map manually
+    const machine = @tagName(elf.e_machine);
 
     // TODO: print leading zeroes in hex values for constant width and adapt test
     try out.print(
@@ -364,7 +377,7 @@ fn verboseFileType(e_type: std.elf.ET) []const u8 {
         .NONE => "NONE (None)",
         .REL => "REL (Relocatable file)",
         .EXEC => "EXEC (Executable file)",
-        .DYN => "DYN (Position-Independent Executable or shared object file)",
+        .DYN => "DYN (Position-Independent Executable or Shared Object file)",
         .CORE => "CORE (Core file)",
     };
 }
@@ -489,8 +502,8 @@ test printElfHeader {
         \\  Version:                           1 (current)
         \\  OS/ABI:                            UNIX - System V
         \\  ABI Version:                       0
-        \\  Type:                              DYN (Position-Independent Executable file)
-        \\  Machine:                           Advanced Micro Devices X86-64
+        \\  Type:                              DYN (Position-Independent Executable or Shared Object file)
+        \\  Machine:                           X86_64
         \\  Version:                           0x1
         \\  Entry point address:               0x128
         \\  Start of program headers:          64 (bytes into file)

@@ -2,15 +2,16 @@
 
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
+It supports all features that the current zig objcopy implementation provides and more with a backward compatibile interface.
 
-All features are available using the `build.zig` library or using the command line tool.
+All features are available within the `build.zig` build system and using the command line tool.
 
 ## build.zig Usage
 
 ```zig
 const exe = b.addExecutable(.{
     .name = "exe",
-    .root_source_file = "exe.zig"),
+    .root_source_file = "exe.zig",
     .target = target,
     .optimize = optimize,
 });
@@ -53,13 +54,13 @@ Options:
   -S, --section-headers
       Display section headers.
 
-  -l, --program-headers, segments
+  -l, --program-headers, --segments
       Display program headers.
 
   -e, --headers
       Display file, section and program headers. Equivalent to -S -h -l.
 
-  -s, --symbols, syms
+  -s, --symbols, --syms
       Display the symbol table.
 
 General Options:
@@ -94,6 +95,9 @@ Options:
       Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
       The <file> path is relative to the in-file directory. Absolute paths are supported as well.
 
+  --extract-to <file>
+      Extract the removed sections into <file>, and add a .gnu-debuglink section.
+
   --compress-debug-sections
       Compress DWARF debug sections with zlib
 
@@ -114,19 +118,11 @@ General Options:
 
 ## Limitations
 
-* `zig objcopy --extract-to <file>` is not supported. I don't think it's a good option
-    * can easily achieved by combining --add-gnu-debuglink and --only-keep-debug
-    * it's neither a GNU nor LLVM binutil option
 * rejects input if program header loads a subset of a section. It has to load entire sections.
 * ELF to ELF copying only
     * Mach-O maybe at some point
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
 * not tested: running objcopy on a 32bit system on 64bit ELF files. It should work but may not
-
-## TODO
-
-* raw and hex output not supported yet
-* 64bit ELF files only due to compiler bug in inline else
 
 ### Current Zig Limitations
 
@@ -146,5 +142,3 @@ Zig objcopy currently has strict limitations:
 * -j / --only-section and --pad-to are not supported for ELF to ELF copying
 * no support for multiple single character arguments with single dash, e.g. `-gS`
 
-There are many possible optimizations that won't be done before the existing zig objcopy ELF to ELF feature set without the limitations is achieved.
-Input file modifications are avoided as much as possible, i.e.: sections and headers are only relocated when necessary.

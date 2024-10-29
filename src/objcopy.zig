@@ -16,12 +16,11 @@ pub const ObjCopyOptions = struct {
     strip_all: bool = false,
     only_keep_debug: bool = false,
     add_gnu_debuglink: ?AddGnuDebugLinkOption = null,
+    extract_to: ?ExtractToOption = null,
     compress_debug_sections: bool = false,
     set_section_alignment: ?SetSectionAlignmentOption = null,
     set_section_flags: ?SetSectionFlagsOption = null,
     add_section: ?AddSectionOption = null,
-    // TODO: add --extract-to option again for backward compatibility
-    // extract_to: ?ExtractToOption = null,
 };
 
 // TODO: see original discussion https://github.com/ziglang/zig/issues/2826
@@ -107,8 +106,12 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     );
     defer out_file.close();
 
-    // TODO: --extract-to
+    // --extract-to
     // copy sections before modifications then write the removed sections at the end to the separate file
+    if (options.extract_to) |extract_to| {
+        _ = extract_to;
+        // TODO: NYI
+    }
 
     // -O, --output_target
     switch (options.output_target) {

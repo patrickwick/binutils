@@ -100,11 +100,16 @@ fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !voi
             break :name std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[entry.st_name])));
         };
 
-        // TODO: format properly
         try out.print(
-            \\{d} 0x{x} 0x{x} {s} {s}
+            \\{d} 0x{s} 0x{s} {s} {s}
             \\
-        , .{ i, entry.st_value, entry.st_size, @tagName(st_type), name });
+        , .{
+            i,
+            intToHex(@as(u32, @truncate(entry.st_value))),
+            intToHex(@as(u32, @truncate(entry.st_size))),
+            @tagName(st_type),
+            name,
+        });
     }
     //   },
     // }

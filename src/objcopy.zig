@@ -82,10 +82,13 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     const out = std.io.getStdOut();
     _ = out;
 
-    // TODO: allow single argument objcopy as well using temporary output, see man objcopy:
-    // "If you do not specify outfile, objcopy creates a temporary file and destructively renames the result with the name of infile."
-    // The input file cannot be overwritten since sections are copied lazyly on write and the file needs to stay valid if an operations fails.
-    if (std.mem.eql(u8, options.in_file_path, options.out_file_path)) fatal("input and output file path are not allowed to be equal", .{});
+    // Uses temporary file if input and output are the same then overwrites the input
+    const use_temporary_file = std.mem.eql(u8, options.in_file_path, options.out_file_path);
+    const out_path = if (use_temporary_file) std.mem.concat(allocator, u8, &.{ options.out_file_path, ".tmp" }) catch |err| fatal(
+        "failed reading ELF file '{s}': {s}",
+        .{ options.in_file_path, @errorName(err) },
+    ) else options.out_file_path;
+    defer if (use_temporary_file) allocator.free(out_path);
 
     var in_file = std.fs.cwd().openFile(options.in_file_path, .{}) catch |err| fatal(
         "unable to open input '{s}': {s}",
@@ -96,13 +99,13 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     var elf = Elf.read(allocator, in_file) catch |err| fatal("failed reading ELF file '{s}': {s}", .{ options.in_file_path, @errorName(err) });
     defer elf.deinit();
 
-    var out_file = std.fs.cwd().createFile(options.out_file_path, .{
+    var out_file = std.fs.cwd().createFile(out_path, .{
         .read = true,
         .truncate = true,
-        .mode = 0o755,
+        .mode = in_file.mode() catch |err| fatal("failed getting input file mode '{s}': {s}", .{ options.in_file_path, @errorName(err) }),
     }) catch |err| fatal(
         "failed creating output '{s}': {s}",
-        .{ options.out_file_path, @errorName(err) },
+        .{ out_path, @errorName(err) },
     );
     defer out_file.close();
 
@@ -463,11 +466,18 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         );
     }
 
-    std.log.debug("writing ELF output to '{s}'", .{options.out_file_path});
+    std.log.debug("writing ELF output to '{s}'", .{out_path});
     elf.write(allocator, in_file, out_file) catch |err| fatal(
         "failed writing output '{s}': {s}",
-        .{ options.out_file_path, @errorName(err) },
+        .{ out_path, @errorName(err) },
     );
+
+    if (use_temporary_file) {
+        std.fs.cwd().rename(out_path, options.in_file_path) catch |err| fatal(
+            "failed overwriting input file '{s}' with temporary result '{s}': {s}",
+            .{ options.in_file_path, out_path, @errorName(err) },
+        );
+    }
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {

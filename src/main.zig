@@ -385,7 +385,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
     }
 
     if (in_file_path == null) fatalPrintUsageObjCopy(out, "two positional argument required, got none", .{});
-    if (out_file_path == null) fatalPrintUsageObjCopy(out, "two positional argument required, got one: '{s}'", .{in_file_path.?});
+    if (out_file_path == null) out_file_path = in_file_path;
 
     return .{
         .in_file_path = in_file_path.?,
@@ -453,9 +453,12 @@ fn fatalPrintUsageReadElf(out: std.io.AnyWriter, comptime format: []const u8, ar
 }
 
 const OBJCOPY_USAGE =
-    \\Usage: binutils objcopy [options] in-file out-file
+    \\Usage: binutils objcopy [options] in-file [out-file]
     \\
     \\Options:
+    \\  in-file
+    \\  out-file
+    \\     Input and output file paths. If you do not specify out-file or if is equivalent to in-file, a temporary file is used and the input file is only overwritten on success.
     \\
     \\  -j <section>, --only-section=<section>
     \\      Remove all sections except <section> and the section name table section (.shstrtab).
@@ -780,6 +783,12 @@ test "parseReadElf fatal errors" {
 test parseObjCopy {
     const writer = std.io.null_writer.any();
 
+    // single position argument
+    try t.expectEqualDeep(objcopy.ObjCopyOptions{
+        .in_file_path = "./inout",
+        .out_file_path = "./inout",
+    }, parseObjCopy(writer, &.{"./inout"}));
+
     // positional argument
     try t.expectEqualDeep(objcopy.ObjCopyOptions{
         .in_file_path = "./in",
@@ -837,13 +846,6 @@ test parseObjCopy {
 }
 
 test "parseObjCopy fatal errors" {
-    try testing.expectExit(FATAL_EXIT_CODE, struct {
-        fn F() !void {
-            // requires two positional arguments
-            _ = parseObjCopy(std.io.null_writer.any(), &.{"a"});
-        }
-    }.F);
-
     try testing.expectExit(FATAL_EXIT_CODE, struct {
         fn F() !void {
             // no positional argument

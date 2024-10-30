@@ -7,6 +7,7 @@ all:
 	${MAKE} readelf-args
 	${MAKE} readelf-symbols
 	${MAKE} objcopy
+	${MAKE} objcopy-single-argument
 	${MAKE} objcopy-add-section
 	${MAKE} objcopy-only-section
 	${MAKE} objcopy-pad-to-small
@@ -60,6 +61,13 @@ objcopy: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_no_args
 	zig build run -- readelf ./reproduction/ls_objcopy_no_args -hSl
 	./reproduction/ls_objcopy_no_args
+
+.PHONY: objcopy-single-argument
+objcopy-single-argument: ./reproduction/ls
+	cp ./reproduction/ls ./reproduction/ls_single_argument
+	zig build run -- objcopy ./reproduction/ls_single_argument
+	zig build run -- readelf ./reproduction/ls_single_argument -hSl
+	./reproduction/ls_single_argument
 
 .PHONY: objcopy-add-section
 objcopy-add-section: ./reproduction/ls

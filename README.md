@@ -75,6 +75,9 @@ General Options:
 Usage: binutils objcopy [options] in-file out-file
 
 Options:
+  in-file
+  out-file
+      Input and output file paths. If you do not specify out-file or if is equivalent to in-file, a temporary file is used and the input file is only overwritten on success.
 
   -j <section>, --only-section=<section>
       Remove all sections except <section> and the section name table section (.shstrtab).

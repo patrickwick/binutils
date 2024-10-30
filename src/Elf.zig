@@ -697,7 +697,6 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
 
     var sections = Sections.init(allocator);
     errdefer {
-        // TODO: use sections / segments types with deinit functions
         for (sections.items) |*section| section.deinit();
         sections.deinit();
     }

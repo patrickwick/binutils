@@ -142,8 +142,12 @@ objcopy-strip-all: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_strip_all --strip-all
 	zig build run -- readelf ./reproduction/binutils_strip_all -hSl
 	./reproduction/binutils_strip_all --help
+	objcopy --strip-all ./reproduction/binutils ./reproduction/binutils_strip_all_gnu --strip-all
+	zig build run -- readelf ./reproduction/binutils_strip_all -S
+	zig build run -- readelf ./reproduction/binutils_strip_all_gnu -S
 	@du -h ./reproduction/binutils
 	@du -h ./reproduction/binutils_strip_all
+	@du -h ./reproduction/binutils_strip_all_gnu
 
 .PHONY: objcopy-compress-debug
 objcopy-compress-debug: ./reproduction/ls

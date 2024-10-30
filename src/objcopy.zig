@@ -200,18 +200,18 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     if (options.strip_all) {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
-            for (elf.sections.items) |*section| {
+            for (elf.sections.items, 0..) |*section, i| {
+                // keep section header string table
+                if (i == elf.e_shstrndx) continue;
+
                 // keep mapped
                 const is_mapped = mapped: for (elf.program_segments.items) |segment| {
                     for (segment.segment_mapping.items) |handle| if (section.handle == handle) break :mapped true;
                 } else false;
                 if (is_mapped) continue;
 
-                // keep string tables
+                // TODO: keep .comment section
                 switch (section.header.sh_type) {
-                    // TODO: keep .comment section
-                    // TODO: also remove symtabs
-                    std.elf.SHT_SYMTAB, std.elf.SHT_STRTAB => continue,
                     else => {},
                 }
 

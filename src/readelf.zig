@@ -44,21 +44,13 @@ pub const SymbolType = enum(u4) {
     }
 };
 
-fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !void {
-    // TODO: support multiple symtabs
-    const symbol_table = for (elf.sections.items) |*section| {
-        if (section.header.sh_type == std.elf.SHT_SYMTAB) break section;
-    } else {
-        try out.print("ELF input does not contain any symbol table SHT_SYMTAB section", .{});
-        return;
-    };
-
+fn printSymbolTable(symbol_table: *Elf.Section, input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !void {
     const symbol_count = std.math.divExact(usize, symbol_table.header.sh_size, symbol_table.header.sh_entsize) catch fatal(
         "Symbol table size {d} is not divisble by entry size {d}",
         .{ symbol_table.header.sh_size, symbol_table.header.sh_entsize },
     );
 
-    const symtab_content = try symbol_table.readContent(input, elf.allocator);
+    const symtab_content = try symbol_table.readContent(input);
 
     const section_name = elf.getSectionName(symbol_table);
     try out.print(
@@ -67,14 +59,8 @@ fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !voi
         \\
     , .{ section_name, symbol_count });
 
-    // FIXME: crashes with current zig master 0.14.0-dev.1904+e2e79960d, see https://github.com/ziglang/zig/issues/21798
-    // use type of input file class, not native architecture
-    // switch (elf.e_ident.ei_class) {
-    // instantiate code per class (type cannot depend on runtime value)
-    //   inline else => |class| {
-    const SymbolRef = std.elf.Elf64_Sym; // if (class == .elfclass64) std.elf.Elf64_Sym else std.elf.Elf32_Sym;
-
-    // TODO: swap bytes
+    // TODO: add support for non-native input files
+    const SymbolRef = std.elf.Elf64_Sym;
     if (elf.isEndianMismatch()) fatal("input file with non-native endianness is not supported yet", .{});
 
     if (@sizeOf(SymbolRef) != symbol_table.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
@@ -84,7 +70,7 @@ fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !voi
 
     const string_table_section_index = symbol_table.header.sh_link;
     const string_table_section = &elf.sections.items[string_table_section_index];
-    const string_table_content = try string_table_section.readContent(input, elf.allocator);
+    const string_table_content = try string_table_section.readContent(input);
 
     const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
     for (symbol_entries, 0..) |entry, i| {
@@ -111,8 +97,12 @@ fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !voi
             name,
         });
     }
-    //   },
-    // }
+}
+
+fn printSymbols(input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !void {
+    for (elf.sections.items) |*section| {
+        if (section.header.sh_type == std.elf.SHT_SYMTAB) try printSymbolTable(section, input, out, elf);
+    } else try out.print("ELF input does not contain any symbol table SHT_SYMTAB section", .{});
 }
 
 fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
@@ -455,7 +445,7 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
                     .{ i, mapping },
                 );
 
-                const content = section.readContent(in, elf.allocator) catch |err| fatal(
+                const content = section.readContent(in) catch |err| fatal(
                     "failed reading '{s}' section content: {s}",
                     .{ elf.getSectionName(section), @errorName(err) },
                 );

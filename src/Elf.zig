@@ -104,16 +104,14 @@ pub const Section = struct {
         }
     }
 
-    // FIXME: passing the allocator is pointless here since the deinit is already bound to the allocator stored in the struct
-    pub fn readContent(self: *@This(), input: anytype, allocator: std.mem.Allocator) ![]u8 {
+    pub fn readContent(self: *@This(), input: anytype) ![]u8 {
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
         switch (self.content) {
             .input_file_range => |range| {
-                self.allocator = allocator; // FIXME: remove
-                const data = try allocator.alloc(u8, range.size);
-                errdefer allocator.free(data);
+                const data = try self.allocator.alloc(u8, range.size);
+                errdefer self.allocator.free(data);
 
                 try input.seekableStream().seekTo(range.offset);
                 const bytes_read = try input.reader().readAll(data);
@@ -450,7 +448,7 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
 
     const shstrtab = &self.sections.items[self.e_shstrndx];
-    const data = try shstrtab.readContent(source, self.allocator);
+    const data = try shstrtab.readContent(source);
     const name_index = data.len;
     const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
     errdefer self.allocator.free(copy);
@@ -607,7 +605,7 @@ pub fn getSectionName(self: *const @This(), section: *const Section) []const u8 
     return std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[section.header.sh_name])));
 }
 
-pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, target: anytype) !void {
+pub fn write(self: *@This(), source: anytype, target: anytype) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "writer"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(target), "seekableStream"));
 
@@ -646,7 +644,7 @@ pub fn write(self: *@This(), allocator: std.mem.Allocator, source: anytype, targ
     for (self.sections.items) |*section| {
         switch (section.content) {
             .input_file_range, .data, .data_allocated => {
-                const data = try section.readContent(source, allocator);
+                const data = try section.readContent(source);
                 try out_stream.seekTo(section.header.sh_offset);
                 try writer.writeAll(data);
 
@@ -722,7 +720,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         }
         fatal("input ELF file does not contain a string table section (usually .shstrtab)", .{});
     };
-    const string_table_content = try string_table_section.readContent(source, allocator);
+    const string_table_content = try string_table_section.readContent(source);
 
     {
         var section_it = header.section_header_iterator(source);
@@ -838,8 +836,6 @@ inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: any
     return a_min < b_max and b_min < a_max;
 }
 
-// TODO: create an additional fatal for validations after a valid file was modified?
-// In that case, it would be a bug in here and should be reported.
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
@@ -921,7 +917,7 @@ test "Read and write roundtrip" {
 
     var out_buffer = [_]u8{0} ** in_buffer.len;
     var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
-    try elf.write(allocator, &in_buffer_stream, &out_buffer_stream);
+    try elf.write(&in_buffer_stream, &out_buffer_stream);
 
     try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
 }

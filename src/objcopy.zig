@@ -154,7 +154,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         const section = sorted.items[sorted.items.len - 1];
         const end = section.header.sh_offset + section.header.sh_size;
         if (pad_to.address > end) {
-            const old_content: []u8 = section.readContent(in_file, allocator) catch |err| fatal(
+            const old_content: []u8 = section.readContent(in_file) catch |err| fatal(
                 "failed reading section content of '{s}': {s}",
                 .{ elf.getSectionName(section), @errorName(err) },
             );
@@ -330,7 +330,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 continue;
             }
 
-            const content = section.readContent(in_file, allocator) catch |err| fatal(
+            const content = section.readContent(in_file) catch |err| fatal(
                 "failed reading uncompressed section content from '{s}': {s}",
                 .{ name, @errorName(err) },
             );
@@ -466,7 +466,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     }
 
     std.log.debug("writing ELF output to '{s}'", .{out_path});
-    elf.write(allocator, in_file, out_file) catch |err| fatal(
+    elf.write(in_file, out_file) catch |err| fatal(
         "failed writing output '{s}': {s}",
         .{ out_path, @errorName(err) },
     );

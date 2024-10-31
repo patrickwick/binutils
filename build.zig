@@ -105,19 +105,18 @@ pub fn build(b: *std.Build) void {
             integration_test_step.dependOn(&objcopy_install.step);
         }
 
-        // objcopy --only-keep-debug
-        // {
-        //     const name = "hello_world_add_section";
-        //     const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
-        //         .add_section = .{
-        //             .section_name = ".abc123",
-        //             // FIXME: needs to make sure the binary is written before getting the path
-        //             .file_path = hello_world_exe.getEmittedBin(),
-        //         },
-        //     });
-        //     const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
-        //     integration_test_step.dependOn(&objcopy_install.step);
-        // }
+        // objcopy --add-section
+        {
+            const name = "hello_world_add_section";
+            const objcopy_target = binutils.Build.Step.ObjCopy.create(b, hello_world_exe.getEmittedBin(), .{
+                .add_section = .{
+                    .section_name = ".abc123",
+                    .file_path = hello_world_exe.getEmittedBin(),
+                },
+            });
+            const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
+            integration_test_step.dependOn(&objcopy_install.step);
+        }
 
         // TODO: add convenience split debug option as done in current zig objcopy
     }

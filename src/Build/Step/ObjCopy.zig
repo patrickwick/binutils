@@ -12,6 +12,11 @@ input_file: std.Build.LazyPath,
 output_file: std.Build.GeneratedFile,
 options: Options,
 
+pub const AddSectionOption = struct {
+    section_name: []const u8,
+    file_path: std.Build.LazyPath,
+};
+
 // TODO: add convenience split debug option as done in current zig objcopy
 pub const Options = struct {
     output_target: objcopy.OutputTarget = .elf,
@@ -25,7 +30,7 @@ pub const Options = struct {
     compress_debug_sections: bool = false,
     set_section_alignment: ?objcopy.SetSectionAlignmentOption = null,
     set_section_flags: ?objcopy.SetSectionFlagsOption = null,
-    add_section: ?objcopy.AddSectionOption = null,
+    add_section: ?AddSectionOption = null,
 };
 
 pub fn create(owner: *std.Build, input_file: std.Build.LazyPath, options: Options) *@This() {
@@ -88,10 +93,15 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         manifest.hash.add(@as(u14, @bitCast(o.flags)));
     }
     manifest.hash.add(target.options.add_section != null);
-    if (target.options.add_section) |o| {
+    const add_section = if (target.options.add_section) |o| blk: {
         manifest.hash.addBytes(o.section_name);
-        manifest.hash.addBytes(o.file_path);
-    }
+        const path = o.file_path.getPath2(b, null);
+        manifest.hash.addBytes(path);
+        break :blk objcopy.AddSectionOption{
+            .section_name = o.section_name,
+            .file_path = path,
+        };
+    } else null;
 
     const CACHE_BIN_DIR_PREFIX = "o"; // hardcoded in a few places in zig std.lib, did not find constant
 
@@ -125,6 +135,6 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         .compress_debug_sections = target.options.compress_debug_sections,
         .set_section_alignment = target.options.set_section_alignment,
         .set_section_flags = target.options.set_section_flags,
-        .add_section = target.options.add_section,
+        .add_section = add_section,
     });
 }

@@ -782,6 +782,9 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 const section_start = section.header.sh_offset;
                 const section_end = section_start + section.header.sh_size;
 
+                // TODO: this does not consider memsz != filesz
+                // e.g.: if NOBITS like .bss is at the end, the .bss content are not stored in memory => memsz < filesz
+
                 // NOTE: limitation: rejects input if program header loads a subset of a section
                 // * start is between section start and end but end is not after section end
                 // * end is between section start and end but start is not before section start

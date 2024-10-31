@@ -157,13 +157,29 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
     // there are too many to map manually
     const machine = @tagName(elf.e_machine);
 
-    // TODO: print leading zeroes in hex values for constant width and adapt test
     try out.print(
         \\
         \\ELF Header:
-        \\  Magic:   {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x} {x}
+        \\  Magic:   {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s}
         \\
-    , .{ eb[0], eb[1], eb[2], eb[3], eb[4], eb[5], eb[6], eb[7], eb[8], eb[9], eb[10], eb[11], eb[12], eb[13], eb[14], eb[15] });
+    , .{
+        intToHex(eb[0]),
+        intToHex(eb[1]),
+        intToHex(eb[2]),
+        intToHex(eb[3]),
+        intToHex(eb[4]),
+        intToHex(eb[5]),
+        intToHex(eb[6]),
+        intToHex(eb[7]),
+        intToHex(eb[8]),
+        intToHex(eb[9]),
+        intToHex(eb[10]),
+        intToHex(eb[11]),
+        intToHex(eb[12]),
+        intToHex(eb[13]),
+        intToHex(eb[14]),
+        intToHex(eb[15]),
+    });
 
     try out.print(
         \\  Class:                             {s}
@@ -227,7 +243,6 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
     );
     const correction = 3;
     try out.writeByteNTimes(' ', @max(correction, indentation) - correction);
-    // TODO: Add "Lk Inf Al"
     try out.writeAll(
         \\Type          Address            Offset     Size       ES         Flg
         \\
@@ -501,7 +516,7 @@ test printElfHeader {
     const expected =
         \\
         \\ELF Header:
-        \\  Magic:   7f 45 4c 46 2 1 1 0 0 0 0 0 0 0 0 0
+        \\  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
         \\  Class:                             ELF64
         \\  Data:                              2's complement, little endian
         \\  Version:                           1 (current)

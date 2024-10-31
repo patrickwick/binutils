@@ -23,11 +23,11 @@ pub const ObjCopyOptions = struct {
     add_section: ?AddSectionOption = null,
 };
 
-// TODO: see original discussion https://github.com/ziglang/zig/issues/2826
 pub const OutputTarget = enum {
     elf,
-    raw, // equivalent to gnu objcopy -O binary
-    hex, // Intel hex format (ihex)
+    // NOTE: does not support other output formats than ELF, see original discussion https://github.com/ziglang/zig/issues/2826
+    // raw, // equivalent to gnu objcopy -O binary
+    // hex, // Intel hex format (ihex)
 };
 
 pub const PadToOption = struct {
@@ -119,7 +119,6 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     // -O, --output_target
     switch (options.output_target) {
         .elf => {},
-        else => fatal("only ELF to ELF copying is currently supported", .{}),
     }
 
     // --only-section

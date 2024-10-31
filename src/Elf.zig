@@ -174,7 +174,10 @@ e_phoff: usize,
 
 // Section header offset
 e_shoff: usize,
-e_flags: usize, // TODO: add bitfield
+
+// NOTE: flags are not supported, they're always set to 0
+// => consider adding a bitfield and replacing std.elf since it's lacking fields in 0.13.0 and OS / ABI ranges
+e_flags: usize,
 
 // ELF header size
 e_ehsize: usize,
@@ -222,7 +225,7 @@ pub fn init(
         .e_entry = header.entry,
         .e_phoff = header.phoff,
         .e_shoff = header.shoff,
-        .e_flags = 0, // TODO: no non-zero flags supported
+        .e_flags = 0, // NOTE: no non-zero flags supported
         .e_ehsize = @sizeOf(std.elf.Ehdr),
         .e_phentsize = @sizeOf(std.elf.Phdr),
         .e_phnum = header.phnum,
@@ -288,8 +291,6 @@ fn fixup(self: *@This()) !void {
                 section.header.sh_offset,
                 section.header.sh_offset + self.e_shoff + self.e_shnum * self.e_shentsize,
             });
-
-            // TODO: move e_entry if it was in the moved section
         }
 
         // relocate section headers
@@ -331,8 +332,6 @@ fn fixup(self: *@This()) !void {
                         next_section.header.sh_offset,
                         next_section.header.sh_offset + next_section.header.sh_size,
                     });
-
-                    // TODO: move e_entry if it was in the moved section
                 }
             }
         }
@@ -372,8 +371,6 @@ fn fixup(self: *@This()) !void {
                         next_section.header.sh_offset,
                         next_section.header.sh_offset + next_section.header.sh_size,
                     });
-
-                    // TODO: move e_entry if it was in the moved section
                 }
             }
         }
@@ -572,6 +569,7 @@ fn getMaximumFileOffset(self: *const @This()) usize {
     return std.mem.alignForward(usize, highest, default_file_alignment);
 }
 
+// Precondition: shstrtab is located in sections at index e_shstrndx
 pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
     const index = for (self.sections.items, 0..) |*section, i| {
         if (section.handle == handle) break i;
@@ -782,9 +780,6 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 const section_start = section.header.sh_offset;
                 const section_end = section_start + section.header.sh_size;
 
-                // TODO: this does not consider memsz != filesz
-                // e.g.: if NOBITS like .bss is at the end, the .bss content are not stored in memory => memsz < filesz
-
                 // NOTE: limitation: rejects input if program header loads a subset of a section
                 // * start is between section start and end but end is not after section end
                 // * end is between section start and end but start is not before section start
@@ -881,6 +876,10 @@ test "read endianness conversion" {
     // TODO: input endianness does not match native endianness
 }
 
+test "read 32bit ELF file" {
+    // TODO: 32bit input
+}
+
 test isIntersect {
     try t.expect(isIntersect(0, 10, 0, 10));
     try t.expect(isIntersect(0, 10, 4, 10));
@@ -902,6 +901,10 @@ test "write endianness conversion" {
     }
 
     // TODO: target endianness does not match native endianness
+}
+
+test "write 32bit ELF file" {
+    // TODO: 32bit input
 }
 
 // Roundtrip test:
@@ -1029,15 +1032,9 @@ test addSection {
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
-    // const last_section = &elf.sections.items[elf.sections.items.len - 1];
     const old_section_count = elf.sections.items.len;
-
     try elf.addSection(&in_buffer_stream, ".abc", "content");
     try t.expectEqual(old_section_count + 1, elf.sections.items.len);
-
-    // FIXME: sections is added after headers, not last section
-    // const new = &elf.sections.items[elf.sections.items.len - 1];
-    // try t.expectEqual(last_section.header.sh_offset + last_section.header.sh_size, new.header.sh_offset);
 
     try assertElf(&elf);
 }

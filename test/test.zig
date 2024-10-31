@@ -3,7 +3,7 @@ const std = @import("std");
 
 const PREFIX = "./zig-out"; // TODO: no hardcoded prefix
 
-test "objcopy --add-section .new_section_abc123=./hello_world" {
+test "objcopy --add-section .new_section_abc123=./test_base" {
     const allocator = std.testing.allocator;
 
     {
@@ -13,10 +13,10 @@ test "objcopy --add-section .new_section_abc123=./hello_world" {
             .argv = &.{
                 "./bin/binutils",
                 "objcopy",
-                "./test/hello_world",
-                "./test/hello_world_add_section",
+                "./test/test_base",
+                "./test/test_base_add_section",
                 "--add-section",
-                ".new_section_abc123=./test/hello_world",
+                ".new_section_abc123=./test/test_base",
             },
         });
         defer allocator.free(result.stdout);
@@ -37,7 +37,7 @@ test "objcopy --add-section .new_section_abc123=./hello_world" {
             .argv = &.{
                 "./bin/binutils",
                 "readelf",
-                "./test/hello_world_add_section",
+                "./test/test_base_add_section",
                 "--sections",
             },
         });
@@ -53,7 +53,3 @@ test "objcopy --add-section .new_section_abc123=./hello_world" {
         try std.testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, ".new_section_abc123 PROGBITS"));
     }
 }
-
-// TODO: use zig objcopy to verify backward compatibility
-
-// TODO: use eu-elflint for validation?

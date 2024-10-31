@@ -17,7 +17,6 @@ pub const AddSectionOption = struct {
     file_path: std.Build.LazyPath,
 };
 
-// TODO: add convenience split debug option as done in current zig objcopy
 pub const Options = struct {
     output_target: objcopy.OutputTarget = .elf,
     only_section: ?objcopy.OnlySectionOption = null,
@@ -31,6 +30,12 @@ pub const Options = struct {
     set_section_alignment: ?objcopy.SetSectionAlignmentOption = null,
     set_section_flags: ?objcopy.SetSectionFlagsOption = null,
     add_section: ?AddSectionOption = null,
+
+    /// Put the stripped debug sections in a separate file.
+    /// Creates or overwrites the .gnu_debuglink section which contains a reference to the debug file and adds it to the output file.
+    /// The debug file path is relative to the input file directory. Absolute paths are supported as well.
+    /// This is a combination of the --only-keep-debug and --add-gnu-debuglink options.
+    extract_to_separate_file: ?[]const u8 = null,
 };
 
 pub fn create(owner: *std.Build, input_file: std.Build.LazyPath, options: Options) *@This() {
@@ -102,6 +107,8 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
             .file_path = path,
         };
     } else null;
+    manifest.hash.add(target.options.extract_to_separate_file != null);
+    if (target.options.extract_to_separate_file) |o| manifest.hash.addBytes(o);
 
     const CACHE_BIN_DIR_PREFIX = "o"; // hardcoded in a few places in zig std.lib, did not find constant
 
@@ -109,7 +116,14 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         const digest = manifest.final();
         const out_file_path = try b.cache_root.join(b.allocator, &.{ CACHE_BIN_DIR_PREFIX, &digest, target.input_file.getDisplayName() });
         target.output_file.path = out_file_path;
+        // TODO: cache debug file
         return;
+    }
+
+    // TODO: NYI
+    if (target.options.extract_to_separate_file) |extract_to_separate_file| {
+        _ = extract_to_separate_file;
+        std.log.warn("NYI: extract_to_separate_file", .{});
     }
 
     const digest = manifest.final();

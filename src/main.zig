@@ -79,7 +79,6 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
     var program_headers = false;
     var symbols = false;
 
-    // TODO: add -wA for gnu_debuglink
     for (args) |arg| {
         if (arg.len == 0) continue;
         if (arg[0] == '-') {
@@ -205,8 +204,8 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                         "unrecognized argument: '{s}', expecting --output-target=<value>",
                         .{arg},
                     );
-                    _ = split;
-                    output_target = .elf; // TODO: parse
+                    if (std.mem.eql(u8, split.second, "elf")) fatalPrintUsageObjCopy(out, "Only ELF output is supported at this point", .{});
+                    output_target = .elf;
                     continue;
                 }
 
@@ -215,8 +214,8 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                     if (args.len > i + 1) {
                         defer i += 1;
                         const opt = args[i + 1];
-                        // TODO: support hex with 0x prefix
-                        const address = std.fmt.parseInt(usize, opt, 10) catch fatalPrintUsageObjCopy(
+                        const deduce_base = 0;
+                        const address = std.fmt.parseInt(usize, opt, deduce_base) catch fatalPrintUsageObjCopy(
                             out,
                             "unrecognized argument: '{s}', expecting --pad-to <addr>",
                             .{arg},
@@ -337,9 +336,8 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                         "unrecognized argument: '{s}', expecting --output-target=<value>",
                         .{arg},
                     );
-                    _ = split;
-                    // See original discussion https://github.com/ziglang/zig/issues/2826
-                    output_target = .elf; // TODO: parse
+                    if (std.mem.eql(u8, split.second, "elf")) fatalPrintUsageObjCopy(out, "Only ELF output is supported at this point", .{});
+                    output_target = .elf;
                     continue;
                 }
 
@@ -464,7 +462,7 @@ const OBJCOPY_USAGE =
     \\      Remove all sections except <section> and the section name table section (.shstrtab).
     \\
     \\  --pad-to <addr>
-    \\      Pad the last section up to address <addr>.
+    \\      Pad the last section up to address <addr>. The address accepts decimal values, hex value with a "0x" prefix or binary values with a "0b" prefix.
     \\
     \\  -g, strip-debug
     \\      Remove all debug sections from the output.
@@ -476,7 +474,7 @@ const OBJCOPY_USAGE =
     \\      Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact.
     \\
     \\  --add-gnu-debuglink=<file>
-    \\      Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
+    \\      Creates or overwrites the .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
     \\      The <file> path is relative to the in-file directory. Absolute paths are supported as well.
     \\
     \\  --extract-to <file>

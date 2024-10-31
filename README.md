@@ -83,7 +83,7 @@ Options:
       Remove all sections except <section> and the section name table section (.shstrtab).
 
   --pad-to <addr>
-      Pad the last section up to address <addr>.
+      Pad the last section up to address <addr>. The address accepts decimal values, hex value with a "0x" prefix or binary values with a "0b" prefix.
 
   -g, strip-debug
       Remove all debug sections from the output.

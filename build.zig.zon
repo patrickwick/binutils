@@ -2,6 +2,8 @@
     .name = "binutils",
     .version = "0.1.0",
     // NOTE: written for master => does not compile with 0.13.0 or earlier yet
+    // A 0.13.0 backport will follow but it requires replacing the standard libary
+    // ELF parser since it does not support all necessary fields in 0.13.0 yet.
     .minimum_zig_version = "0.14.0-dev.1904+e2e79960d",
     .dependencies = .{},
     .paths = .{

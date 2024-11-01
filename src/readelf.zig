@@ -28,22 +28,6 @@ pub fn readelf(allocator: std.mem.Allocator, options: ReadElfOptions) void {
     if (options.symbols) printSymbols(file, out.writer().any(), &elf) catch |err| fatal("failed printing symbol table: {s}", .{@errorName(err)});
 }
 
-pub const SymbolType = enum(u4) {
-    notype = std.elf.STT_NOTYPE,
-    object = std.elf.STT_OBJECT,
-    func = std.elf.STT_FUNC,
-    section = std.elf.STT_SECTION,
-    file = std.elf.STT_FILE,
-    common = std.elf.STT_COMMON,
-    tls = std.elf.STT_TLS,
-    num = std.elf.STT_NUM,
-    gnu_ifunc = std.elf.STT_GNU_IFUNC,
-
-    pub inline fn fromRawType(st_type: u4) @This() {
-        return std.meta.intToEnum(@This(), st_type) catch fatal("failed mapping st_type to enum, unexpected value {d}", .{st_type});
-    }
-};
-
 fn printSymbolTable(symbol_table: *Elf.Section, input: std.fs.File, out: std.io.AnyWriter, elf: *const Elf) !void {
     const symbol_count = std.math.divExact(usize, symbol_table.header.sh_size, symbol_table.header.sh_entsize) catch fatal(
         "Symbol table size {d} is not divisble by entry size {d}",
@@ -77,7 +61,7 @@ fn printSymbolTable(symbol_table: *Elf.Section, input: std.fs.File, out: std.io.
                 var entry = entry_raw;
                 if (elf.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, &entry);
 
-                const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry));
+                const st_type = Elf.SymbolType.fromRawType(SymbolRef.st_type(entry));
 
                 const name = name: {
                     switch (st_type) {

@@ -154,7 +154,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         const section = sorted.items[sorted.items.len - 1];
         const end = section.header.sh_offset + section.header.sh_size;
         if (pad_to.address > end) {
-            const old_content: []u8 = section.readContent(in_file) catch |err| fatal(
+            const old_content: []align(Elf.SECTION_ALIGN) u8 = section.readContent(in_file) catch |err| fatal(
                 "failed reading section content of '{s}': {s}",
                 .{ elf.getSectionName(section), @errorName(err) },
             );
@@ -166,7 +166,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             );
             @memset(new_content[old_content.len..], 0);
 
-            elf.updateSectionContent(section.handle, new_content) catch |err| fatal(
+            elf.updateSectionContent(in_file, section.handle, new_content) catch |err| fatal(
                 "failed updating section content of '{s}': {s}",
                 .{ elf.getSectionName(section), @errorName(err) },
             );
@@ -294,9 +294,8 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         };
 
         const crc_bytes = std.mem.toBytes(crc);
-        const alignment = 4;
-        const crc_offset = std.mem.alignForward(usize, link.len + 1, alignment);
-        const link_content = allocator.alloc(u8, crc_offset + crc_bytes.len) catch |err| fatal(
+        const crc_offset = std.mem.alignForward(usize, link.len + 1, Elf.SECTION_ALIGN);
+        const link_content = allocator.alignedAlloc(u8, Elf.SECTION_ALIGN, crc_offset + crc_bytes.len) catch |err| fatal(
             "failed allocating debuglink section content: {s}",
             .{@errorName(err)},
         );
@@ -306,7 +305,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
         const name = ".gnu_debuglink";
         if (elf.getSectionByName(name)) |section| {
-            elf.updateSectionContent(section.handle, link_content) catch |err| fatal(
+            elf.updateSectionContent(in_file, section.handle, link_content) catch |err| fatal(
                 "failed overwriting .gnu_debuglink: {s}",
                 .{@errorName(err)},
             );
@@ -336,7 +335,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             );
 
             // only compress if the compressed data is smaller than the input data
-            var compressed = allocator.alloc(u8, content.len + @sizeOf(std.elf.Chdr)) catch |err| fatal(
+            var compressed = allocator.alignedAlloc(u8, Elf.SECTION_ALIGN, content.len + @sizeOf(std.elf.Chdr)) catch |err| fatal(
                 "failed allocating buffer for compression of size '{d}': {s}",
                 .{ content.len, @errorName(err) },
             );
@@ -378,7 +377,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                     section.header.sh_flags |= std.elf.SHF_COMPRESSED;
                     section.header.sh_size = compressed.len;
 
-                    elf.updateSectionContent(section.handle, compressed) catch |err| fatal(
+                    elf.updateSectionContent(in_file, section.handle, compressed) catch |err| fatal(
                         "failed updating section content '{s}': {s}",
                         .{ name, @errorName(err) },
                     );
@@ -398,7 +397,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             if (std.mem.eql(u8, name, set_section_alignment.section_name)) break section;
         } else fatal("uknown section '{s}'", .{set_section_alignment.section_name});
 
-        elf.updateSectionAlignment(section.handle, set_section_alignment.alignment) catch |err| fatal(
+        elf.updateSectionAlignment(in_file, section.handle, set_section_alignment.alignment) catch |err| fatal(
             "failed overwriting section alignment: {s}",
             .{@errorName(err)},
         );
@@ -456,7 +455,13 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         );
         defer add_section_input.close();
 
-        const content = add_section_input.readToEndAlloc(allocator, std.math.maxInt(usize)) catch |err| fatal(
+        const content = add_section_input.readToEndAllocOptions(
+            allocator,
+            std.math.maxInt(usize),
+            null,
+            Elf.SECTION_ALIGN,
+            null,
+        ) catch |err| fatal(
             "failed reading add-sectipn input '{s}': {s}",
             .{ options.in_file_path, @errorName(err) },
         );

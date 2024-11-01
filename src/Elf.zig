@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const testing = @import("testing.zig");
 
 const FATAL_EXIT_CODE = 1;
+pub const SECTION_ALIGN = @alignOf(*anyopaque);
 
 /// Stores ELF information in native endianess and provides helpers for modifications and converting the file back to target endianness.
 pub const Elf = @This();
@@ -62,7 +63,7 @@ pub const Section = struct {
     pub const NoBits = void;
 
     // new data written into new sections that did not exist in the input
-    pub const Data = []u8;
+    pub const Data = []align(SECTION_ALIGN) u8;
 
     /// Section contents have different sources and are only loaded and copied on demand.
     /// For example, appending data to a section from the input file converts it from a file range to a modified heap allocated copy of the input section.
@@ -107,13 +108,13 @@ pub const Section = struct {
         }
     }
 
-    pub fn readContent(self: *@This(), input: anytype) ![]u8 {
+    pub fn readContent(self: *@This(), input: anytype) ![]align(SECTION_ALIGN) u8 {
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
         comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
         switch (self.content) {
             .input_file_range => |range| {
-                const data = try self.allocator.alloc(u8, range.size);
+                const data = try self.allocator.alignedAlloc(u8, SECTION_ALIGN, range.size);
                 errdefer self.allocator.free(data);
 
                 try input.seekableStream().seekTo(range.offset);
@@ -147,6 +148,22 @@ pub const ProgramSegment = struct {
 
 pub const Sections = std.ArrayList(Section);
 pub const ProgramSegments = std.ArrayList(ProgramSegment);
+
+pub const SymbolType = enum(u4) {
+    notype = std.elf.STT_NOTYPE,
+    object = std.elf.STT_OBJECT,
+    func = std.elf.STT_FUNC,
+    section = std.elf.STT_SECTION,
+    file = std.elf.STT_FILE,
+    common = std.elf.STT_COMMON,
+    tls = std.elf.STT_TLS,
+    num = std.elf.STT_NUM,
+    gnu_ifunc = std.elf.STT_GNU_IFUNC,
+
+    pub inline fn fromRawType(st_type: u4) @This() {
+        return std.meta.intToEnum(@This(), st_type) catch fatal("failed mapping st_type to enum, unexpected value {d}", .{st_type});
+    }
+};
 
 section_handle_counter: Section.Handle,
 
@@ -250,7 +267,10 @@ pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
     return self.section_handle_counter;
 }
 
-fn fixup(self: *@This()) !void {
+fn fixup(self: *@This(), input: anytype) !void {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
+
     // relocate headers and sections contents due to size increase if needed
     var sorted_sections = try self.sections.clone();
     defer sorted_sections.deinit();
@@ -371,7 +391,33 @@ fn fixup(self: *@This()) !void {
         }
     }
 
-    // TODO: update symbol table st_shndx if the index has changed (used to reference section names for STT_SECTION)
+    // update symbol table st_shndx inside each STT_SECTION symbol if the index has changed? Each of these symbols stores a the shstrtab index.
+    for (self.sections.items) |*section| {
+        if (section.header.sh_type == std.elf.SHT_SYMTAB) switch (self.e_ident.ei_class) {
+            inline else => |class| {
+                const SymbolRef = if (class == .elfclass64) std.elf.Elf64_Sym else std.elf.Elf32_Sym;
+
+                if (@sizeOf(SymbolRef) != section.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
+                    section.header.sh_entsize,
+                    @sizeOf(SymbolRef),
+                });
+
+                // modifies content in place
+                const symtab_content = try section.readContent(input);
+                const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
+                for (symbol_entries) |*entry| {
+                    // bytes need to be swapped if native endianness does not match
+                    if (self.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, entry);
+                    defer if (self.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, entry);
+
+                    const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry.*));
+                    if (st_type == .section) {
+                        entry.st_shndx = @intCast(self.e_shstrndx);
+                    }
+                }
+            },
+        };
+    }
 }
 
 fn validate(self: *const @This()) !void {
@@ -440,6 +486,8 @@ fn validate(self: *const @This()) !void {
     // TODO: validate section to segment mapping
 }
 
+// NOTE: symbol tables can list sections names redudantely to strtab using STT_SECTION symbols.
+// This function does **not** add such a symbol.
 pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8) !usize {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
@@ -447,7 +495,7 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     const shstrtab = &self.sections.items[self.e_shstrndx];
     const data = try shstrtab.readContent(source);
     const name_index = data.len;
-    const copy = try self.allocator.alloc(u8, data.len + section_name.len + 1);
+    const copy = try self.allocator.alignedAlloc(u8, SECTION_ALIGN, data.len + section_name.len + 1);
     errdefer self.allocator.free(copy);
 
     @memcpy(copy[0..name_index], data);
@@ -459,14 +507,13 @@ pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8)
     shstrtab.content = .{ .data_allocated = copy };
     shstrtab.header.sh_size = copy.len;
 
-    // TODO: add STT_SECTION symbol for the new section name to symtab?
-
-    try self.fixup();
+    // required to correct for the increased section size that can push other sections or headers down
+    try self.fixup(source);
 
     return name_index;
 }
 
-pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, content: []const u8) !void {
+pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, content: []align(SECTION_ALIGN) const u8) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "reader"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(source), "seekableStream"));
 
@@ -479,6 +526,9 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     const default_address_alignment = 4;
     const not_mapped = 0;
     const dynamic = 0;
+
+    const copy = try self.allocator.alignedAlloc(u8, SECTION_ALIGN, content.len);
+    @memcpy(copy, content);
 
     try self.sections.append(.{
         .handle = self.getNextSectionHandle(),
@@ -494,13 +544,13 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
             .sh_addralign = default_address_alignment,
             .sh_entsize = dynamic,
         },
-        .content = .{ .data_allocated = try self.allocator.dupe(u8, content) },
+        .content = .{ .data_allocated = copy },
         .allocator = self.allocator,
     });
     self.e_shnum = self.sections.items.len;
 
     // overwrite offset again after fixup since the new header was not accounted
-    try self.fixup();
+    try self.fixup(source);
     self.sections.items[self.sections.items.len - 1].header.sh_offset = self.getMaximumFileOffset();
 }
 
@@ -520,18 +570,24 @@ pub fn getSortedSectionPointersAlloc(self: *const @This(), allocator: std.mem.Al
     return sorted;
 }
 
-pub fn updateSectionContent(self: *@This(), handle: Section.Handle, content: []u8) !void {
+pub fn updateSectionContent(self: *@This(), input: anytype, handle: Section.Handle, content: []align(SECTION_ALIGN) u8) !void {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
+
     for (self.sections.items) |*section| {
         if (section.handle == handle) {
             section.content = .{ .data_allocated = content };
             section.header.sh_size = content.len;
-            try self.fixup();
+            try self.fixup(input);
             break;
         }
     } else return error.SectionNotFound;
 }
 
-pub fn updateSectionAlignment(self: *@This(), handle: Section.Handle, alignment: usize) !void {
+pub fn updateSectionAlignment(self: *@This(), input: anytype, handle: Section.Handle, alignment: usize) !void {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
+
     if (!std.math.isPowerOfTwo(alignment)) {
         fatal("section alignment must be a power of two, got {d}", .{alignment});
     }
@@ -539,7 +595,7 @@ pub fn updateSectionAlignment(self: *@This(), handle: Section.Handle, alignment:
     for (self.sections.items) |*section| {
         if (section.handle == handle) {
             section.header.sh_addralign = @intCast(alignment);
-            try self.fixup();
+            try self.fixup(input);
             break;
         }
     } else return error.SectionNotFound;
@@ -907,15 +963,15 @@ test read {
     const allocator = t.allocator;
 
     {
-        var in_buffer = try createTestElfBuffer(true, .little);
-        var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+        var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .little);
+        var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
         var elf = try read(allocator, &in_buffer_stream);
         defer elf.deinit();
     }
 
     {
         var empty_buffer = [0]u8{};
-        var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &empty_buffer, .pos = 0 };
+        var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &empty_buffer, .pos = 0 };
         try t.expectError(error.TruncatedElf, read(allocator, &in_buffer_stream));
     }
 }
@@ -928,8 +984,8 @@ test "read - endianness conversion" {
 
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(true, .big);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .big);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 }
@@ -937,8 +993,8 @@ test "read - endianness conversion" {
 test "read - 32bit ELF file" {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(false, .big);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(false, .big);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 }
@@ -960,13 +1016,13 @@ test isIntersect {
 test "Read and write roundtrip" {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(true, .little);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .little);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
-    var out_buffer = [_]u8{0} ** in_buffer.len;
-    var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
+    var out_buffer align(SECTION_ALIGN) = [_]u8{0} ** in_buffer.len;
+    var out_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &out_buffer, .pos = 0 };
     try elf.write(&in_buffer_stream, &out_buffer_stream);
 
     try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
@@ -981,13 +1037,13 @@ test "Read and write roundtrip - endianness conversion" {
 
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(true, .big);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .big);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
-    var out_buffer = [_]u8{0} ** in_buffer.len;
-    var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
+    var out_buffer align(SECTION_ALIGN) = [_]u8{0} ** in_buffer.len;
+    var out_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &out_buffer, .pos = 0 };
     try elf.write(&in_buffer_stream, &out_buffer_stream);
 
     try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
@@ -996,13 +1052,13 @@ test "Read and write roundtrip - endianness conversion" {
 test "Read and write roundtrip - 32bit input" {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(false, .little);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(false, .little);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
-    var out_buffer = [_]u8{0} ** in_buffer.len;
-    var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
+    var out_buffer align(SECTION_ALIGN) = [_]u8{0} ** in_buffer.len;
+    var out_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &out_buffer, .pos = 0 };
     try elf.write(&in_buffer_stream, &out_buffer_stream);
 
     try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
@@ -1049,8 +1105,8 @@ fn createTestElfBuffer(comptime is_64bit: bool, endian: std.builtin.Endian) ![25
     };
 
     const test_buffer_size = 256;
-    var in_buffer = [_]u8{0} ** test_buffer_size;
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = [_]u8{0} ** test_buffer_size;
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     const in_buffer_writer = in_buffer_stream.writer();
 
     // write input ELF
@@ -1097,8 +1153,8 @@ fn createTestElfBuffer(comptime is_64bit: bool, endian: std.builtin.Endian) ![25
 test addSectionName {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(true, .little);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .little);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
@@ -1115,27 +1171,39 @@ test addSectionName {
 test addSection {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(true, .little);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .little);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
     const old_section_count = elf.sections.items.len;
-    try elf.addSection(&in_buffer_stream, ".abc", "content");
+
+    const raw = "content";
+    const content = try allocator.alignedAlloc(u8, SECTION_ALIGN, raw.len);
+    defer allocator.free(content);
+    @memcpy(content, raw);
+
+    try elf.addSection(&in_buffer_stream, ".abc", content);
     try t.expectEqual(old_section_count + 1, elf.sections.items.len);
 }
 
 test removeSection {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer(true, .little);
-    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(true, .little);
+    var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
 
     // add section and remove it again
     const old_section_count = elf.sections.items.len;
-    try elf.addSection(&in_buffer_stream, ".abc", "content");
+
+    const raw = "content";
+    const content = try allocator.alignedAlloc(u8, SECTION_ALIGN, raw.len);
+    defer allocator.free(content);
+    @memcpy(content, raw);
+
+    try elf.addSection(&in_buffer_stream, ".abc", content);
     try t.expectEqual(old_section_count + 1, elf.sections.items.len);
 
     try elf.removeSection(elf.sections.items[elf.sections.items.len - 1].handle);

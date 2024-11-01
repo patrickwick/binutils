@@ -782,10 +782,17 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 // * start is between section start and end but end is not after section end
                 // * end is between section start and end but start is not before section start
                 if ((segment_start >= section_start and segment_start < section_end and segment_end < section_end) //
-                or (segment_end > section_start and segment_end <= section_end and segment_start > section_start)) fatal(
-                    "segment {d} (0x{x}-0x{x}) is not allowed to map section {d} subset (0x{x}-0x{x}). Only entire sections can be mapped",
-                    .{ segment_i, segment_start, segment_end, section_i, section_start, section_end },
-                );
+                or (segment_end > section_start and segment_end <= section_end and segment_start > section_start)) {
+                    std.log.warn("segment {d} (0x{x}-0x{x}) is not allowed to map section {d} subset (0x{x}-0x{x}). Only entire sections can be mapped", .{
+                        segment_i,
+                        segment_start,
+                        segment_end,
+                        section_i,
+                        section_start,
+                        section_end,
+                    });
+                    continue;
+                }
 
                 if (segment_start <= section_start and segment_end >= section_end) {
                     try segment_mapping.append(section.handle);

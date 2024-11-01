@@ -121,7 +121,6 @@ General Options:
 
 ## Limitations
 
-* rejects input if program header loads a subset of a section. It has to load entire sections.
 * ELF to ELF copying only
     * Mach-O maybe at some point
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole

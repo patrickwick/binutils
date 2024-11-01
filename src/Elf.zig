@@ -122,7 +122,7 @@ pub const Section = struct {
 
                 return data;
             },
-            .no_bits => return "", // e.g.: .bss
+            .no_bits => return &.{}, // e.g.: .bss
             .data, .data_allocated => |data| return data,
         }
     }
@@ -638,6 +638,7 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
             // section content
             for (self.sections.items) |*section| {
                 switch (section.content) {
+                    // NOTE: input_file_range could be optimized to use OS APIs that copy file ranges without reading to heap memory first
                     .input_file_range, .data, .data_allocated => {
                         const data = try section.readContent(source);
                         try out_stream.seekTo(section.header.sh_offset);
@@ -803,11 +804,17 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 // You can check using "eu-elflint --strict"
                 if ((segment_start >= section_start and segment_start < section_end and segment_end < section_end) //
                 or (segment_end > section_start and segment_end <= section_end and segment_start > section_start)) {
-                    std.log.warn("segment {d} (0x{x}-0x{x}) maps section {d} subset (0x{x}-0x{x}). Skipping section, only entire sections are mapped", .{
+                    const name = if (section.header.sh_name < string_table_content.len)
+                        std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[section.header.sh_name])))
+                    else
+                        "<invalid>";
+
+                    std.log.warn("segment #{d} (0x{x}-0x{x}) maps section #{d} '{s}' subset (0x{x}-0x{x}). Skipping section, only entire sections are mapped", .{
                         segment_i,
                         segment_start,
                         segment_end,
                         section_i,
+                        name,
                         section_start,
                         section_end,
                     });

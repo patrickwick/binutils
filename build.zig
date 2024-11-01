@@ -85,9 +85,6 @@ pub fn build(b: *std.Build) void {
             const test_base_install = b.addInstallArtifact(test_base_exe, .{ .dest_dir = destination_dir });
             integration_test_exe.step.dependOn(&test_base_install.step);
 
-            // TODO: skipping test big endian target: NYI, will corrupt enum values, etc.
-            comptime if (std.mem.eql(u8, base_name, target_names[2])) continue;
-
             // objcopy --strip-all
             {
                 const name = base_name ++ "_strip_all";

@@ -616,7 +616,7 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
             const SectionHeader = if (class == .elfclass64) std.elf.Elf64_Shdr else std.elf.Elf32_Shdr;
             const ProgramHeader = if (class == .elfclass64) std.elf.Elf64_Phdr else std.elf.Elf32_Phdr;
 
-            const output_endianness = self.e_ident.ei_data;
+            const endian = self.e_ident.ei_data;
 
             {
                 const header = ElfHeader{
@@ -637,7 +637,26 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
                 };
 
                 try out_stream.seekTo(0);
-                try writer.writeStructEndian(header, output_endianness);
+
+                // NOTE: cannot use writeStructEndian since @enumFromInt check fails due to non-exhaustive enums in std.elf
+                // try writer.writeStructEndian(header, output_endianness);
+
+                @setEvalBranchQuota(2000);
+                const FT = std.meta.FieldType;
+                try writer.writeAll(&header.e_ident);
+                try writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).@"enum".tag_type, @intFromEnum(header.e_type), endian);
+                try writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).@"enum".tag_type, @intFromEnum(header.e_machine), endian);
+                try writer.writeInt(FT(ElfHeader, .e_version), header.e_version, endian);
+                try writer.writeInt(FT(ElfHeader, .e_entry), header.e_entry, endian);
+                try writer.writeInt(FT(ElfHeader, .e_phoff), header.e_phoff, endian);
+                try writer.writeInt(FT(ElfHeader, .e_shoff), header.e_shoff, endian);
+                try writer.writeInt(FT(ElfHeader, .e_flags), header.e_flags, endian);
+                try writer.writeInt(FT(ElfHeader, .e_ehsize), header.e_ehsize, endian);
+                try writer.writeInt(FT(ElfHeader, .e_phentsize), header.e_phentsize, endian);
+                try writer.writeInt(FT(ElfHeader, .e_phnum), header.e_phnum, endian);
+                try writer.writeInt(FT(ElfHeader, .e_shentsize), header.e_shentsize, endian);
+                try writer.writeInt(FT(ElfHeader, .e_shnum), header.e_shnum, endian);
+                try writer.writeInt(FT(ElfHeader, .e_shstrndx), header.e_shstrndx, endian);
             }
 
             // section content
@@ -670,7 +689,7 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
                     .p_memsz = @intCast(program_segment.header.p_memsz),
                     .p_align = @intCast(program_segment.header.p_align),
                 };
-                try writer.writeStructEndian(header, output_endianness);
+                try writer.writeStructEndian(header, endian);
             }
 
             // section headers
@@ -688,7 +707,7 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
                     .sh_addralign = @intCast(section.header.sh_addralign),
                     .sh_entsize = @intCast(section.header.sh_entsize),
                 };
-                try writer.writeStructEndian(header, output_endianness);
+                try writer.writeStructEndian(header, endian);
             }
         },
     }

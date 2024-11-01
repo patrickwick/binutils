@@ -2,7 +2,7 @@
 
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
-It supports all features that the current zig objcopy implementation provides and more with a backward compatibile interface.
+It supports all features of the current zig objcopy implementation with a backward compatible interface and more.
 
 All features are available within the `build.zig` build system and using the command line.
 
@@ -126,6 +126,7 @@ General Options:
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
 * not tested: running objcopy on a 32bit system on 64bit ELF files. It should work but may not
 * OS or processor specific ELF types are not supported (std.elf.ET is exhaustive, would need an own implementation)
+* requires zig 0.14.0-dev.2051+b1361f237 or later. A zig 0.13.0 backport will follow
 
 ### Current Zig Limitations
 

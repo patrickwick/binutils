@@ -4,7 +4,7 @@ const binutils = @import("src/binutils.zig");
 const USE_LLVM = false;
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    const native_target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     // Command line executable
@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         const exe = b.addExecutable(.{
             .name = "binutils",
             .root_source_file = b.path("src/main.zig"),
-            .target = target,
+            .target = native_target,
             .optimize = optimize,
             .use_llvm = USE_LLVM,
         });
@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
     {
         const exe_unit_tests = b.addTest(.{
             .root_source_file = b.path("src/main.zig"),
-            .target = target,
+            .target = native_target,
             .optimize = optimize,
             .use_llvm = USE_LLVM,
         });
@@ -51,19 +51,10 @@ pub fn build(b: *std.Build) void {
         integration_test_step.dependOn(&exe.step);
         integration_test_step.dependOn(b.getInstallStep());
 
-        const integration_test_exe = b.addTest(.{
-            .root_source_file = b.path(TEST_DIR ++ "/test.zig"),
-            .target = target,
-            .optimize = optimize,
-            .use_llvm = USE_LLVM,
-        });
-        const run_integration_tests = b.addRunArtifact(integration_test_exe);
-        integration_test_step.dependOn(&run_integration_tests.step);
-
         const destination_dir = std.Build.Step.InstallArtifact.Options.Dir{ .override = .{ .custom = "test" } };
 
         const targets = [_]std.Build.ResolvedTarget{
-            target, // native
+            native_target, // native
             b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // test 32bit
             b.resolveTargetQuery(.{ .cpu_arch = .aarch64_be }), // test big endian arch
         };
@@ -74,16 +65,16 @@ pub fn build(b: *std.Build) void {
             "test_base_aarch64_big_endian",
         };
 
-        inline for (targets, target_names) |t, base_name| {
+        inline for (targets, target_names) |target, base_name| {
             const test_base_exe = b.addExecutable(.{
                 .name = base_name,
                 .root_source_file = .{ .cwd_relative = b.pathJoin(&.{ TEST_DIR, "/test_base.zig" }) },
-                .target = t,
+                .target = target,
                 .optimize = optimize,
                 .use_llvm = true, // zig backend does not support all targets yet
             });
             const test_base_install = b.addInstallArtifact(test_base_exe, .{ .dest_dir = destination_dir });
-            integration_test_exe.step.dependOn(&test_base_install.step);
+            integration_test_step.dependOn(&test_base_install.step);
 
             // objcopy --strip-all
             {

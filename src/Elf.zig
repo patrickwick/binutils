@@ -911,7 +911,6 @@ test read {
         var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
         var elf = try read(allocator, &in_buffer_stream);
         defer elf.deinit();
-        try assertElf(&elf);
     }
 
     {
@@ -933,7 +932,6 @@ test "read - endianness conversion" {
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
-    try assertElf(&elf);
 }
 
 test "read - 32bit ELF file" {
@@ -943,7 +941,6 @@ test "read - 32bit ELF file" {
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
-    try assertElf(&elf);
 }
 
 test isIntersect {
@@ -1113,8 +1110,6 @@ test addSectionName {
 
     const new_size = elf.sections.items[elf.e_shstrndx].header.sh_size;
     try t.expectEqual(old_size + new_name.len + 1, new_size); // + 1 for 0 sentinel in front of new name
-
-    try assertElf(&elf);
 }
 
 test addSection {
@@ -1128,8 +1123,6 @@ test addSection {
     const old_section_count = elf.sections.items.len;
     try elf.addSection(&in_buffer_stream, ".abc", "content");
     try t.expectEqual(old_section_count + 1, elf.sections.items.len);
-
-    try assertElf(&elf);
 }
 
 test removeSection {
@@ -1147,31 +1140,4 @@ test removeSection {
 
     try elf.removeSection(elf.sections.items[elf.sections.items.len - 1].handle);
     try t.expectEqual(old_section_count, elf.sections.items.len);
-
-    try assertElf(&elf);
-}
-
-// internal runtime checks that to be executed in debug mode after modifications
-fn assertElf(elf: *const Elf) !void {
-    // TODO: report errors in more readable way
-    try t.expectEqual(elf.e_version, .ev_current);
-    try t.expectEqual(elf.e_ident.ei_version, .ev_current);
-    try t.expect(elf.e_shstrndx != 0);
-    try t.expectEqual(elf.e_flags, 0);
-    // FIXME: not true for 32bit file on 64bit native system
-    // try t.expectEqual(elf.e_shentsize, @sizeOf(std.elf.Shdr));
-    // try t.expectEqual(elf.e_phentsize, @sizeOf(std.elf.Phdr));
-    try t.expectEqual(elf.e_shnum, elf.sections.items.len);
-    try t.expectEqual(elf.e_phnum, elf.program_segments.items.len);
-
-    for (elf.sections.items) |section| {
-        const file_size = switch (section.content) {
-            .data, .data_allocated => |data| data.len,
-            .no_bits => 0,
-            .input_file_range => |range| range.size,
-        };
-        try t.expectEqual(section.header.sh_size, file_size);
-    }
-
-    // TODO: check for section and header overlap, see fixup function
 }

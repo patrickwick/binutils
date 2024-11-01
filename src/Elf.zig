@@ -31,13 +31,16 @@ pub const EIdent = struct {
     ei_abiversion: AbiVersion,
 
     pub fn toBuffer(self: *const @This()) [std.elf.EI_NIDENT]u8 {
+        const data: u8 = if (self.ei_data == .little) std.elf.ELFDATA2LSB else std.elf.ELFDATA2MSB;
+
         const e_ident_buffer = std.elf.MAGIC // EI_MAG0-3
         ++ [_]u8{@intFromEnum(self.ei_class)} // EI_CLASS
-        ++ [_]u8{@intFromEnum(self.ei_data)} // EI_DATA
+        ++ [_]u8{data} // EI_DATA
         ++ [_]u8{@intFromEnum(self.ei_version)} // EI_VERSION
         ++ [_]u8{@intFromEnum(self.ei_osabi)} // EI_OSABI
         ++ [_]u8{self.ei_abiversion} // EI_ABIVERSION
         ++ [_]u8{0} ** 7; // EI_PAD
+
         return e_ident_buffer.*;
     }
 };
@@ -883,7 +886,7 @@ test read {
     const allocator = t.allocator;
 
     {
-        var in_buffer = try createTestElfBuffer();
+        var in_buffer = try createTestElfBuffer(.little);
         var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
         var elf = try read(allocator, &in_buffer_stream);
         defer elf.deinit();
@@ -897,13 +900,27 @@ test read {
     }
 }
 
-test "read endianness conversion" {
+test "read endianness - conversion" {
     if (builtin.cpu.arch.endian() != .little) {
         std.log.warn("endianness conversion test only runs on little endian targets", .{});
         return;
     }
 
-    // TODO: input endianness does not match native endianness
+    const allocator = t.allocator;
+
+    {
+        var in_buffer = try createTestElfBuffer(.big);
+        var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+        var elf = try read(allocator, &in_buffer_stream);
+        defer elf.deinit();
+        try assertElf(&elf);
+    }
+
+    {
+        var empty_buffer = [0]u8{};
+        var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &empty_buffer, .pos = 0 };
+        try t.expectError(error.TruncatedElf, read(allocator, &in_buffer_stream));
+    }
 }
 
 test "read 32bit ELF file" {
@@ -920,23 +937,6 @@ test isIntersect {
     try t.expect(isIntersect(2, 3, 0, 1) == false);
 }
 
-test write {
-    // TODO
-}
-
-test "write endianness conversion" {
-    if (builtin.cpu.arch.endian() != .little) {
-        std.log.warn("endianness conversion test only runs on little endian targets", .{});
-        return;
-    }
-
-    // TODO: target endianness does not match native endianness
-}
-
-test "write 32bit ELF file" {
-    // TODO: 32bit input
-}
-
 // Roundtrip test:
 // * read from buffer
 // * write to buffer
@@ -944,7 +944,7 @@ test "write 32bit ELF file" {
 test "Read and write roundtrip" {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer();
+    var in_buffer = try createTestElfBuffer(.little);
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
@@ -956,16 +956,43 @@ test "Read and write roundtrip" {
     try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
 }
 
+// Internal data structures are converted to native endianness but are converted back to target endianness on write
+test "Read and write roundtrip - endianness conversion" {
+    if (builtin.cpu.arch.endian() != .little) {
+        std.log.warn("endianness conversion test only runs on little endian targets", .{});
+        return;
+    }
+
+    const allocator = t.allocator;
+
+    var in_buffer = try createTestElfBuffer(.big);
+    var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
+    var elf = try read(allocator, &in_buffer_stream);
+    defer elf.deinit();
+
+    var out_buffer = [_]u8{0} ** in_buffer.len;
+    var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
+    try elf.write(&in_buffer_stream, &out_buffer_stream);
+
+    try t.expectEqualSlices(u8, &in_buffer, &out_buffer);
+}
+
+test "Read and write roundtrip - 32bit input" {
+    // TODO
+}
+
 // Minimal ELF file in a buffer as a basis for tests
-fn createTestElfBuffer() ![256]u8 {
+fn createTestElfBuffer(endian: std.builtin.Endian) ![256]u8 {
     const section_header_table_offset = 64;
     const section_not_mapped = 0;
     const section_dynamic_size = 0;
 
+    const data: u8 = if (endian == .little) std.elf.ELFDATA2LSB else std.elf.ELFDATA2MSB;
+
     const e_ident =
         std.elf.MAGIC // EI_MAG0-3
     ++ [_]u8{std.elf.ELFCLASS64} // EI_CLASS
-    ++ [_]u8{std.elf.ELFDATA2LSB} // EI_DATA
+    ++ [_]u8{data} // EI_DATA
     ++ [_]u8{@intFromEnum(Version.ev_current)} // EI_VERSION
     ++ [_]u8{@intFromEnum(std.elf.OSABI.GNU)} // EI_OSABI
     ++ [_]u8{0} // EI_ABIVERSION
@@ -976,7 +1003,7 @@ fn createTestElfBuffer() ![256]u8 {
         .e_type = std.elf.ET.DYN,
         .e_machine = std.elf.EM.X86_64,
         .e_version = @intFromEnum(Version.ev_current),
-        .e_entry = 0,
+        .e_entry = 0xfafafafafa,
         .e_phoff = 0,
         .e_shoff = @sizeOf(std.elf.Ehdr),
         .e_flags = 0,
@@ -995,7 +1022,7 @@ fn createTestElfBuffer() ![256]u8 {
 
     // write input ELF
     {
-        try in_buffer_writer.writeStruct(header);
+        try in_buffer_writer.writeStructEndian(header, endian);
 
         // section headers
         try t.expectEqual(section_header_table_offset, try in_buffer_stream.getPos());
@@ -1007,7 +1034,7 @@ fn createTestElfBuffer() ![256]u8 {
         // shstrtab
         const string_table_offset = 192;
         const string_table_size = 11;
-        try in_buffer_writer.writeStruct(std.elf.Shdr{
+        try in_buffer_writer.writeStructEndian(std.elf.Shdr{
             .sh_name = 1,
             .sh_type = std.elf.SHT_STRTAB,
             .sh_flags = std.elf.SHF_STRINGS,
@@ -1018,7 +1045,7 @@ fn createTestElfBuffer() ![256]u8 {
             .sh_info = 0,
             .sh_addralign = 1,
             .sh_entsize = section_dynamic_size,
-        });
+        }, endian);
 
         // shstrtab content
         const string_table_section_offset = try in_buffer_stream.getPos();
@@ -1037,7 +1064,7 @@ fn createTestElfBuffer() ![256]u8 {
 test addSectionName {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer();
+    var in_buffer = try createTestElfBuffer(.little);
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
@@ -1057,7 +1084,7 @@ test addSectionName {
 test addSection {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer();
+    var in_buffer = try createTestElfBuffer(.little);
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();
@@ -1072,7 +1099,7 @@ test addSection {
 test removeSection {
     const allocator = t.allocator;
 
-    var in_buffer = try createTestElfBuffer();
+    var in_buffer = try createTestElfBuffer(.little);
     var in_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();

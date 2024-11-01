@@ -62,6 +62,7 @@ pub fn build(b: *std.Build) void {
 
         const destination_dir = std.Build.Step.InstallArtifact.Options.Dir{ .override = .{ .custom = "test" } };
 
+        // TODO: add non-native endianness target and 32bit target architecture
         const test_base_exe = b.addExecutable(.{
             .name = "test_base",
             .root_source_file = b.path(TEST_DIR ++ "/test_base.zig"),
@@ -121,8 +122,12 @@ pub fn build(b: *std.Build) void {
             const objcopy_target = binutils.Build.Step.ObjCopy.create(b, test_base_exe.getEmittedBin(), .{
                 .extract_to_separate_file = "test_base.debug",
             });
+
             const objcopy_install = b.addInstallFileWithDir(objcopy_target.getOutput(), .{ .custom = TEST_DIR }, name);
             integration_test_step.dependOn(&objcopy_install.step);
+
+            const objcopy_debug_install = b.addInstallFileWithDir(objcopy_target.getOutputSeparatedDebug().?, .{ .custom = TEST_DIR }, name);
+            integration_test_step.dependOn(&objcopy_debug_install.step);
         }
     }
 }

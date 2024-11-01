@@ -10,6 +10,7 @@ pub const base_id: std.Build.Step.Id = .objcopy;
 step: std.Build.Step,
 input_file: std.Build.LazyPath,
 output_file: std.Build.GeneratedFile,
+output_debug_file: ?std.Build.GeneratedFile,
 options: Options,
 
 pub const AddSectionOption = struct {
@@ -49,6 +50,7 @@ pub fn create(owner: *std.Build, input_file: std.Build.LazyPath, options: Option
         }),
         .input_file = input_file,
         .output_file = std.Build.GeneratedFile{ .step = &target.step },
+        .output_debug_file = if (options.extract_to_separate_file != null) std.Build.GeneratedFile{ .step = &target.step } else null,
         .options = options,
     };
     input_file.addStepDependencies(&target.step);
@@ -60,7 +62,7 @@ pub fn getOutput(self: *const @This()) std.Build.LazyPath {
 }
 
 pub fn getOutputSeparatedDebug(self: *const @This()) ?std.Build.LazyPath {
-    return if (self.output_file_debug) |*file| .{ .generated = .{ .file = file } } else null;
+    return if (self.output_debug_file) |*file| .{ .generated = .{ .file = file } } else null;
 }
 
 fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
@@ -116,14 +118,13 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         const digest = manifest.final();
         const out_file_path = try b.cache_root.join(b.allocator, &.{ CACHE_BIN_DIR_PREFIX, &digest, target.input_file.getDisplayName() });
         target.output_file.path = out_file_path;
-        // TODO: cache debug file
-        return;
-    }
 
-    // TODO: NYI
-    if (target.options.extract_to_separate_file) |extract_to_separate_file| {
-        _ = extract_to_separate_file;
-        std.log.warn("NYI: extract_to_separate_file", .{});
+        if (target.options.extract_to_separate_file) |o| {
+            const out_debug_file_path = try b.cache_root.join(b.allocator, &.{ CACHE_BIN_DIR_PREFIX, &digest, o });
+            target.output_debug_file.?.path = out_debug_file_path;
+        }
+
+        return;
     }
 
     const digest = manifest.final();
@@ -132,8 +133,42 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         return step.fail("unable to make path {s}: {s}", .{ out_file_dir, @errorName(err) });
     };
 
-    const out_file_path = try b.cache_root.join(b.allocator, &.{ out_file_dir, target.input_file.getDisplayName() });
+    const out_file_path = try b.cache_root.join(b.allocator, &.{
+        out_file_dir,
+        target.input_file.getDisplayName(),
+    });
     target.output_file.path = out_file_path;
+
+    if (target.options.extract_to_separate_file) |extract_to_separate_file| {
+        const debug_file_path = try b.cache_root.join(b.allocator, &.{
+            out_file_dir,
+            extract_to_separate_file,
+        });
+        target.output_debug_file.?.path = debug_file_path;
+
+        // strip debug
+        objcopy.objcopy(b.allocator, .{
+            .in_file_path = in_file_path,
+            .out_file_path = out_file_path,
+            .strip_debug = true,
+        });
+
+        // only debug
+        objcopy.objcopy(b.allocator, .{
+            .in_file_path = in_file_path,
+            .out_file_path = debug_file_path,
+            .only_keep_debug = true,
+        });
+
+        // add debuglink
+        objcopy.objcopy(b.allocator, .{
+            .in_file_path = out_file_path,
+            .out_file_path = out_file_path,
+            .add_gnu_debuglink = .{ .link = extract_to_separate_file },
+        });
+
+        return;
+    }
 
     objcopy.objcopy(b.allocator, .{
         .in_file_path = in_file_path,

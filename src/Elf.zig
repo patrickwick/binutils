@@ -126,20 +126,12 @@ pub const Section = struct {
             .data, .data_allocated => |data| return data,
         }
     }
-
-    // Create the section header in the input file endianess
-    pub fn toShdr(self: *const @This(), output_endianess: std.builtin.Endian) std.elf.Shdr {
-        _ = output_endianess;
-        std.log.warn("TODO: apply endianess on copy if native does not match target", .{});
-        // std.mem.byteSwapAllFields(comptime S: type, ptr: *S)
-        return self.header;
-    }
 };
 
 pub const ProgramSegment = struct {
     pub const SegmentMapping = std.ArrayList(Section.Handle);
 
-    program_header: std.elf.Phdr,
+    header: std.elf.Phdr,
 
     /// Section to segment mapping. A segment can reference 0 to n sections.
     /// Does not support referencing a subrange of a section.
@@ -612,60 +604,87 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
     const writer = target.writer();
     const out_stream = target.seekableStream();
 
-    // TODO: write header in input file class, not native size
-    const output_64bit = if (self.e_ident.ei_class == .elfclass64) true else false;
-    _ = output_64bit;
-    const output_endianness = self.e_ident.ei_data;
+    // NOTE: uses the class and endianness from the input file
+    switch (self.e_ident.ei_class) {
+        inline else => |class| {
+            const ElfHeader = if (class == .elfclass64) std.elf.Elf64_Ehdr else std.elf.Elf32_Ehdr;
+            const SectionHeader = if (class == .elfclass64) std.elf.Elf64_Shdr else std.elf.Elf32_Shdr;
+            const ProgramHeader = if (class == .elfclass64) std.elf.Elf64_Phdr else std.elf.Elf32_Phdr;
 
-    var header = std.elf.Ehdr{
-        .e_ident = self.e_ident.toBuffer(),
-        .e_type = self.e_type,
-        .e_machine = self.e_machine,
-        .e_version = @intFromEnum(Version.ev_current),
-        .e_entry = @intCast(self.e_entry),
-        .e_phoff = @intCast(self.e_phoff),
-        .e_shoff = @intCast(self.e_shoff),
-        .e_flags = @intCast(self.e_flags),
-        .e_ehsize = @intCast(self.e_ehsize),
-        .e_phentsize = @intCast(self.e_phentsize),
-        .e_phnum = @intCast(self.e_phnum),
-        .e_shentsize = @intCast(self.e_shentsize),
-        .e_shnum = @intCast(self.e_shnum),
-        .e_shstrndx = @intCast(self.e_shstrndx),
-    };
+            const output_endianness = self.e_ident.ei_data;
 
-    // convert endianness if output and native endianness do not match
-    if (output_endianness != builtin.target.cpu.arch.endian()) std.mem.byteSwapAllFields(std.elf.Ehdr, &header);
+            {
+                const header = ElfHeader{
+                    .e_ident = self.e_ident.toBuffer(),
+                    .e_type = self.e_type,
+                    .e_machine = self.e_machine,
+                    .e_version = @intFromEnum(Version.ev_current),
+                    .e_entry = @intCast(self.e_entry),
+                    .e_phoff = @intCast(self.e_phoff),
+                    .e_shoff = @intCast(self.e_shoff),
+                    .e_flags = @intCast(self.e_flags),
+                    .e_ehsize = @sizeOf(ElfHeader),
+                    .e_phentsize = @sizeOf(ProgramHeader),
+                    .e_phnum = @intCast(self.e_phnum),
+                    .e_shentsize = @sizeOf(SectionHeader),
+                    .e_shnum = @intCast(self.e_shnum),
+                    .e_shstrndx = @intCast(self.e_shstrndx),
+                };
 
-    try out_stream.seekTo(0);
-    try writer.writeStruct(header);
+                try out_stream.seekTo(0);
+                try writer.writeStructEndian(header, output_endianness);
+            }
 
-    // section content
-    for (self.sections.items) |*section| {
-        switch (section.content) {
-            .input_file_range, .data, .data_allocated => {
-                const data = try section.readContent(source);
-                try out_stream.seekTo(section.header.sh_offset);
-                try writer.writeAll(data);
+            // section content
+            for (self.sections.items) |*section| {
+                switch (section.content) {
+                    .input_file_range, .data, .data_allocated => {
+                        const data = try section.readContent(source);
+                        try out_stream.seekTo(section.header.sh_offset);
+                        try writer.writeAll(data);
 
-                if (section.header.sh_size > data.len) {
-                    try writer.writeByteNTimes(0, section.header.sh_size - data.len);
+                        if (section.header.sh_size > data.len) {
+                            try writer.writeByteNTimes(0, section.header.sh_size - data.len);
+                        }
+                    },
+                    .no_bits => {},
                 }
-            },
-            .no_bits => {},
-        }
-    }
+            }
 
-    // program headers
-    try out_stream.seekTo(self.e_phoff);
-    for (self.program_segments.items) |program_segment| {
-        try writer.writeStruct(program_segment.program_header);
-    }
+            // program headers
+            try out_stream.seekTo(self.e_phoff);
+            for (self.program_segments.items) |program_segment| {
+                const header = ProgramHeader{
+                    .p_type = @intCast(program_segment.header.p_type),
+                    .p_flags = @intCast(program_segment.header.p_flags),
+                    .p_offset = @intCast(program_segment.header.p_offset),
+                    .p_vaddr = @intCast(program_segment.header.p_vaddr),
+                    .p_paddr = @intCast(program_segment.header.p_paddr),
+                    .p_filesz = @intCast(program_segment.header.p_filesz),
+                    .p_memsz = @intCast(program_segment.header.p_memsz),
+                    .p_align = @intCast(program_segment.header.p_align),
+                };
+                try writer.writeStructEndian(header, output_endianness);
+            }
 
-    // section headers
-    try out_stream.seekTo(self.e_shoff);
-    for (self.sections.items) |section| {
-        try writer.writeStruct(section.toShdr(output_endianness));
+            // section headers
+            try out_stream.seekTo(self.e_shoff);
+            for (self.sections.items) |section| {
+                const header = SectionHeader{
+                    .sh_name = @intCast(section.header.sh_name),
+                    .sh_type = @intCast(section.header.sh_type),
+                    .sh_flags = @intCast(section.header.sh_flags),
+                    .sh_addr = @intCast(section.header.sh_addr),
+                    .sh_offset = @intCast(section.header.sh_offset),
+                    .sh_size = @intCast(section.header.sh_size),
+                    .sh_link = @intCast(section.header.sh_link),
+                    .sh_info = @intCast(section.header.sh_info),
+                    .sh_addralign = @intCast(section.header.sh_addralign),
+                    .sh_entsize = @intCast(section.header.sh_entsize),
+                };
+                try writer.writeStructEndian(header, output_endianness);
+            }
+        },
     }
 }
 
@@ -778,12 +797,13 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 const section_start = section.header.sh_offset;
                 const section_end = section_start + section.header.sh_size;
 
-                // NOTE: limitation: rejects input if program header loads a subset of a section
+                // NOTE: skips section mapping if program header only covers a subset of a section
                 // * start is between section start and end but end is not after section end
                 // * end is between section start and end but start is not before section start
+                // You can check using "eu-elflint --strict"
                 if ((segment_start >= section_start and segment_start < section_end and segment_end < section_end) //
                 or (segment_end > section_start and segment_end <= section_end and segment_start > section_start)) {
-                    std.log.warn("segment {d} (0x{x}-0x{x}) is not allowed to map section {d} subset (0x{x}-0x{x}). Only entire sections can be mapped", .{
+                    std.log.warn("segment {d} (0x{x}-0x{x}) maps section {d} subset (0x{x}-0x{x}). Skipping section, only entire sections are mapped", .{
                         segment_i,
                         segment_start,
                         segment_end,
@@ -801,7 +821,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         }
 
         try program_segments.append(.{
-            .program_header = program_header,
+            .header = program_header,
             .segment_mapping = segment_mapping,
         });
     }

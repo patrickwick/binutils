@@ -63,9 +63,9 @@ pub fn build(b: *std.Build) void {
         const destination_dir = std.Build.Step.InstallArtifact.Options.Dir{ .override = .{ .custom = "test" } };
 
         const targets = [_]std.Build.ResolvedTarget{
-            target,
-            b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // to test 32bit
-            b.resolveTargetQuery(.{ .cpu_arch = .aarch64_be }), // to test big endian arch
+            target, // native
+            b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // test 32bit
+            b.resolveTargetQuery(.{ .cpu_arch = .aarch64_be }), // test big endian arch
         };
 
         const target_names = &.{
@@ -85,10 +85,8 @@ pub fn build(b: *std.Build) void {
             const test_base_install = b.addInstallArtifact(test_base_exe, .{ .dest_dir = destination_dir });
             integration_test_exe.step.dependOn(&test_base_install.step);
 
-            // TODO: skipping test on 32bit and big endian targets:
-            // * 32bit: NYI, the header is always written in native size, not correct target size
-            // * big endian: NYI, will corrupt enum values, etc.
-            comptime if (!std.mem.eql(u8, base_name, target_names[0])) continue;
+            // TODO: skipping test big endian target: NYI, will corrupt enum values, etc.
+            comptime if (std.mem.eql(u8, base_name, target_names[2])) continue;
 
             // objcopy --strip-all
             {
@@ -133,7 +131,10 @@ pub fn build(b: *std.Build) void {
                 integration_test_step.dependOn(&objcopy_install.step);
             }
 
-            // objcopy: debug split convenience function
+            // objcopy: debug split convenience function equivalent to:
+            // * objcopy in out --strip-debug
+            // * objcopy in out.debug --only-keep-debug
+            // * objcopy out --add-gnu-debuglink=out.debug
             {
                 const name = base_name ++ "_extract_to_separate_file";
                 const objcopy_target = binutils.Build.Step.ObjCopy.create(b, test_base_exe.getEmittedBin(), .{

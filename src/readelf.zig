@@ -405,7 +405,7 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
     , .{ verboseFileType(elf.e_type), elf.e_entry, elf.e_phnum, elf.e_phoff });
 
     for (elf.program_segments.items) |program_segment| {
-        const h = program_segment.program_header;
+        const h = program_segment.header;
 
         const program_header_type = switch (h.p_type) {
             std.elf.PT_NULL => "NULL",

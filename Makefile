@@ -111,7 +111,7 @@ objcopy-add-gnu-debuglink: ./reproduction/ls
 .PHONY: objcopy-add-gnu-debuglink-strip-debug
 objcopy-add-gnu-debuglink-strip-debug: ./reproduction/ls
 	cp ./zig-out/bin/binutils ./reproduction/binutils
-	objcopy ./reproduction/binutils ./reproduction/binutils.debug --only-keep-debug
+	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils.debug --only-keep-debug
 	zig build run -- objcopy ./reproduction/binutils ./reproduction/binutils_add_gnu_debuglink --add-gnu-debuglink=binutils.debug
 	zig build run -- objcopy ./reproduction/binutils_add_gnu_debuglink ./reproduction/binutils_add_gnu_debuglink_stripped_debug --strip-debug
 	readelf ./reproduction/binutils_add_gnu_debuglink_stripped_debug -wA

@@ -59,43 +59,48 @@ fn printSymbolTable(symbol_table: *Elf.Section, input: std.fs.File, out: std.io.
         \\
     , .{ section_name, symbol_count });
 
-    // TODO: add support for non-native input files
-    const SymbolRef = std.elf.Elf64_Sym;
-    if (elf.isEndianMismatch()) fatal("input file with non-native endianness is not supported yet", .{});
+    switch (elf.e_ident.ei_class) {
+        inline else => |class| {
+            const SymbolRef = if (class == .elfclass64) std.elf.Elf64_Sym else std.elf.Elf32_Sym;
 
-    if (@sizeOf(SymbolRef) != symbol_table.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
-        symbol_table.header.sh_entsize,
-        @sizeOf(SymbolRef),
-    });
+            if (@sizeOf(SymbolRef) != symbol_table.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
+                symbol_table.header.sh_entsize,
+                @sizeOf(SymbolRef),
+            });
 
-    const string_table_section_index = symbol_table.header.sh_link;
-    const string_table_section = &elf.sections.items[string_table_section_index];
-    const string_table_content = try string_table_section.readContent(input);
+            const string_table_section_index = symbol_table.header.sh_link;
+            const string_table_section = &elf.sections.items[string_table_section_index];
+            const string_table_content = try string_table_section.readContent(input);
 
-    const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
-    for (symbol_entries, 0..) |entry, i| {
-        const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry));
+            const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
+            for (symbol_entries, 0..) |entry_raw, i| {
+                var entry = entry_raw;
+                if (elf.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, &entry);
 
-        const name = name: {
-            switch (st_type) {
-                .notype => break :name "",
-                .section => break :name elf.getSectionName(&elf.sections.items[entry.st_shndx]),
-                else => {},
+                const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry));
+
+                const name = name: {
+                    switch (st_type) {
+                        .notype => break :name "",
+                        .section => break :name elf.getSectionName(&elf.sections.items[entry.st_shndx]),
+                        else => {},
+                    }
+                    if (entry.st_name == 0) break :name "";
+                    break :name std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[entry.st_name])));
+                };
+
+                try out.print(
+                    \\{d} 0x{s} 0x{s} {s} {s}
+                    \\
+                , .{
+                    i,
+                    intToHex(@as(u32, @truncate(entry.st_value))),
+                    intToHex(@as(u32, @truncate(entry.st_size))),
+                    @tagName(st_type),
+                    name,
+                });
             }
-            if (entry.st_name == 0) break :name "";
-            break :name std.mem.span(@as([*:0]const u8, @ptrCast(&string_table_content[entry.st_name])));
-        };
-
-        try out.print(
-            \\{d} 0x{s} 0x{s} {s} {s}
-            \\
-        , .{
-            i,
-            intToHex(@as(u32, @truncate(entry.st_value))),
-            intToHex(@as(u32, @truncate(entry.st_size))),
-            @tagName(st_type),
-            name,
-        });
+        },
     }
 }
 

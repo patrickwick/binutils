@@ -8,6 +8,8 @@ All features are available within the `build.zig` build system and using the com
 
 ## build.zig Usage
 
+Strip and executable:
+
 ```zig
 const exe = b.addExecutable(.{
     .name = "exe",
@@ -22,6 +24,24 @@ const exe_stripped = binutils.Build.Step.ObjCopy.create(b, exe.getEmittedBin(), 
 });
 const exe_stripped_install = b.addInstallBinFile(exe_stripped.getOutput(), "exe_stripped");
 b.getInstallStep().dependOn(&exe_stripped_install.step);
+```
+
+Split the debug sections into a separate file:
+
+```zig
+// objcopy: debug split convenience function equivalent to:
+// * objcopy in exe --strip-debug
+// * objcopy in exe.debug --only-keep-debug
+// * objcopy out --add-gnu-debuglink=exe.debug
+const objcopy_target = binutils.Build.Step.ObjCopy.create(b, exe.getEmittedBin(), .{
+    .extract_to_separate_file = "exe_debug_only",
+});
+
+const objcopy_install = b.addInstallBinFile(objcopy_target.getOutput(), "exe");
+b.getInstallStep().dependOn(&objcopy_install.step);
+
+const objcopy_debug_install = b.addInstallBinFile(exe_stripped.getOutputSeparatedDebug().?, "exe.debug");
+b.getInstallStep().dependOn(&objcopy_debug_install.step);
 ```
 
 Please refer to [build.zig](build.zig) for more examples.

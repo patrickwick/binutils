@@ -163,7 +163,6 @@ objcopy-strip-all: ./zig-out/bin/binutils
 	# eu-elflint ./reproduction/binutils_strip_all --strict
 	objcopy --strip-all ./reproduction/binutils ./reproduction/binutils_strip_all_gnu --strip-all
 	zig build run -- readelf ./reproduction/binutils_strip_all -S
-	zig build run -- readelf ./reproduction/binutils_strip_all_gnu -S
 	@du -h ./reproduction/binutils
 	@du -h ./reproduction/binutils_strip_all
 	@du -h ./reproduction/binutils_strip_all_gnu

@@ -179,7 +179,8 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     if (options.strip_debug) {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
-            for (elf.sections.items) |*section| {
+            // skip null section
+            for (elf.sections.items[1..]) |*section| {
                 if (!elf.isDebugSection(section)) continue;
 
                 const name = elf.getSectionName(section);
@@ -193,14 +194,15 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             } else break;
         }
 
-        // TODO: compact file. Header will not be shifted up automatically to minimize layout modifications
+        elf.compact() catch |err| fatal("failed compacting ELF file: {s}", .{@errorName(err)});
     }
 
     // -S, --strip-all
     if (options.strip_all) {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
-            for (elf.sections.items, 0..) |*section, i| {
+            // skip null section
+            for (elf.sections.items[1..], 1..) |*section, i| {
                 // keep section header string table
                 if (i == elf.e_shstrndx) continue;
 
@@ -225,7 +227,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             } else break;
         }
 
-        // TODO: compact file. Header will not be shifted up automatically to minimize layout modifications
+        elf.compact() catch |err| fatal("failed compacting ELF file: {s}", .{@errorName(err)});
     }
 
     // --only-keep-debug
@@ -235,7 +237,8 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
         // double loop since iteration needs to be restarted on modified array
         while (true) {
-            for (elf.sections.items) |*section| {
+            // skip null section
+            for (elf.sections.items[1..]) |*section| {
                 if (elf.isDebugSection(section)) continue;
 
                 const name = elf.getSectionName(section);
@@ -255,7 +258,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
             } else break;
         }
 
-        // TODO: compact file. Header will not be shifted up automatically to minimize layout modifications
+        elf.compact() catch |err| fatal("failed compacting ELF file: {s}", .{@errorName(err)});
     }
 
     // --add-gnu-debuglink

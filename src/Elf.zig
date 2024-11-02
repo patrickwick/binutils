@@ -420,7 +420,6 @@ pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
     // TODO: remove symtab .section entries
 
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
-    // try self.fixup(); // NOTE: fixup should not be required
 }
 
 // Precondition: shstrtab is located in sections at index e_shstrndx
@@ -726,9 +725,86 @@ inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: any
     return a_min < b_max and b_min < a_max;
 }
 
+// Pre:
+// * first section is a null section
+// * .shstrtab is located in sections at index e_shstrndx
+// * sections and header regions do not overlap
+// Post:
+// * sections and headers are tightly packed with correct alignment
+// * section and header orders are unchanged
+// * program section to segment mapping stay valid with updated offsets
+pub fn compact(self: *@This()) !void {
+    // first section is the null section
+    std.debug.assert(self.sections.items.len > 0);
+    std.debug.assert(self.sections.items[0].header.sh_offset == 0);
+    std.debug.assert(self.sections.items[0].header.sh_size == 0);
+
+    // Collect all memory regions with their size and alignment.
+    // The offset is a pointer to be changed while compacting.
+    const Region = struct {
+        offset: *usize,
+        size: usize,
+        alignment: usize,
+    };
+
+    var regions = try std.ArrayList(Region).initCapacity(self.allocator, self.sections.items.len + 2);
+    defer regions.deinit();
+
+    // Skip null section.
+    for (self.sections.items[1..]) |*section| regions.appendAssumeCapacity(.{
+        .offset = &section.header.sh_offset,
+        .size = section.header.sh_size,
+        .alignment = SECTION_ALIGN,
+    });
+
+    regions.appendAssumeCapacity(.{
+        .offset = &self.e_shoff,
+        .size = self.e_shnum * self.e_shentsize,
+        .alignment = SECTION_HEADER_ALIGN,
+    });
+
+    regions.appendAssumeCapacity(.{
+        .offset = &self.e_phoff,
+        .size = self.e_phnum * self.e_phentsize,
+        .alignment = PROGRAM_HEADER_ALIGN,
+    });
+
+    const Sort = struct {
+        fn lessThan(context: *const @This(), left: Region, right: Region) bool {
+            _ = context;
+            return left.offset.* < right.offset.*;
+        }
+    };
+    var sort_context = Sort{};
+    std.mem.sort(Region, regions.items, &sort_context, Sort.lessThan);
+
+    var offset: usize = self.e_ehsize;
+    for (regions.items) |*region| {
+        region.offset.* = std.mem.alignForward(usize, offset, region.alignment);
+        offset += region.size;
+    }
+
+    // TODO: update program headers => offsets and size must match otherwise program will not start
+
+    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
+}
+
+// Pre:
+// * first section is a null section
+// * .shstrtab is located in sections at index e_shstrndx
+// Post:
+// * sections and headers do not overlap
+// * section and header orders are unchanged
+// * program section to segment mapping stay valid with updated offsets
+// * section and header offsets that don't need to be changed are untouched
 fn fixup(self: *@This(), input: anytype) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
+
+    // first section is the null section
+    std.debug.assert(self.sections.items.len > 0);
+    std.debug.assert(self.sections.items[0].header.sh_offset == 0);
+    std.debug.assert(self.sections.items[0].header.sh_size == 0);
 
     var sorted_sections = try self.getSortedSectionPointersAlloc(self.allocator);
     defer sorted_sections.deinit();
@@ -879,6 +955,9 @@ fn fixup(self: *@This(), input: anytype) !void {
             },
         };
     }
+
+    // TODO: update program headers
+    // => at least p_offset needs to be updated accordingly
 
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }

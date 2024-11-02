@@ -88,10 +88,12 @@ objcopy-only-section: ./reproduction/ls
 
 .PHONY: objcopy-pad-to-small
 objcopy-pad-to-small: ./reproduction/ls
-	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_pad_to_small --pad-to 100
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_pad_to_small --pad-to 0x80
 	zig build run -- readelf ./reproduction/ls_objcopy_pad_to_small -hSl
 	./reproduction/ls_objcopy_pad_to_small
 	eu-elflint ./reproduction/ls_objcopy_pad_to_small --strict
+	@du -b ./reproduction/ls
+	@du -b ./reproduction/ls_objcopy_pad_to_small
 
 .PHONY: objcopy-pad-to
 objcopy-pad-to: ./reproduction/ls
@@ -99,6 +101,8 @@ objcopy-pad-to: ./reproduction/ls
 	zig build run -- readelf ./reproduction/ls_objcopy_pad_to -hSl
 	./reproduction/ls_objcopy_pad_to
 	eu-elflint ./reproduction/ls_objcopy_pad_to --strict
+	@du -b ./reproduction/ls
+	@du -b ./reproduction/ls_objcopy_pad_to
 
 .PHONY: objcopy-set-section-flags
 objcopy-set-section-flags: ./reproduction/ls

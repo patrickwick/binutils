@@ -152,14 +152,14 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
 
         std.debug.assert(sorted.items.len > 0);
         const section = sorted.items[sorted.items.len - 1];
-        const end = section.header.sh_offset + section.header.sh_size;
-        if (pad_to.address > end) {
-            const old_content: []align(Elf.SECTION_ALIGN) u8 = section.readContent(in_file) catch |err| fatal(
+        const current_end = section.header.sh_offset + section.header.sh_size;
+        if (pad_to.address > current_end) {
+            const old_content = section.readContent(in_file) catch |err| fatal(
                 "failed reading section content of '{s}': {s}",
                 .{ elf.getSectionName(section), @errorName(err) },
             );
 
-            const new_size = end - section.header.sh_offset;
+            const new_size = pad_to.address - section.header.sh_offset;
             var new_content = allocator.realloc(old_content, new_size) catch |err| fatal(
                 "failed reallocating section content of '{s}' from {d} to {d} bytes: {s}",
                 .{ elf.getSectionName(section), old_content.len, new_size, @errorName(err) },
@@ -171,7 +171,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 .{ elf.getSectionName(section), @errorName(err) },
             );
         } else {
-            std.log.info("section end 0x{x} already exceeds address 0x{x}", .{ end, pad_to.address });
+            std.log.info("section end 0x{x} already exceeds address 0x{x}", .{ current_end, pad_to.address });
         }
     }
 

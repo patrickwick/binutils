@@ -415,6 +415,7 @@ pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
     self.sections.items[index].deinit();
     _ = self.sections.orderedRemove(index);
 
+    // TODO: remove from segment mapping
     // TODO: update shstrtab => remove name
     // TODO: update sh_name for removed name
     // TODO: remove symtab .section entries
@@ -618,13 +619,13 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
                 },
             } else .no_bits;
 
-            defer section_handle_counter += 1;
             try sections.append(.{
                 .handle = section_handle_counter,
                 .header = section,
                 .content = content,
                 .allocator = allocator,
             });
+            section_handle_counter += 1;
         }
     }
 
@@ -636,7 +637,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     while (try program_it.next()) |program_header| {
         defer segment_i += 1;
         var segment_mapping = ProgramSegment.SegmentMapping.init(allocator);
-        for (sections.items, 0..) |section, section_i| {
+        for (sections.items, 0..) |*section, section_i| {
             // NOBITS section like .bss are not contained in the file, so they're handled differently
             if (section.header.sh_type == std.elf.SHT_NOBITS) {
                 const segment_start = program_header.p_vaddr;
@@ -725,6 +726,12 @@ inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: any
     return a_min < b_max and b_min < a_max;
 }
 
+inline fn isInRegion(a_min: anytype, a_max: anytype, b_min: anytype, b_max: anytype) bool {
+    std.debug.assert(a_min <= a_max);
+    std.debug.assert(b_min <= b_max);
+    return a_min >= b_min and a_max <= b_max;
+}
+
 // Pre:
 // * first section is a null section
 // * .shstrtab is located in sections at index e_shstrndx
@@ -784,7 +791,36 @@ pub fn compact(self: *@This()) !void {
         offset += region.size;
     }
 
-    // TODO: update program headers => offsets and size must match otherwise program will not start
+    // Update program header section to segment mapping.
+    // NOTE: segments mapping a contiguous region over multiple sections remain valid since section order is unchanged.
+    for (self.program_segments.items) |*segment| {
+        if (segment.segment_mapping.items.len < 1) continue;
+
+        var found = false;
+        var max_offset: usize = std.math.minInt(usize);
+        var min_offset: usize = std.math.maxInt(usize);
+        for (segment.segment_mapping.items) |section_handle| {
+            const section = self.getSection(section_handle) orelse fatal(
+                "section to segment mapping is invalid. Section for handle '{d}' does not exist",
+                .{section_handle},
+            );
+
+            if (section.header.sh_type == std.elf.SHT_NULL) continue;
+            if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+
+            found = true;
+            min_offset = @min(min_offset, section.header.sh_offset);
+            max_offset = @max(max_offset, section.header.sh_offset + section.header.sh_size);
+        }
+
+        if (found) {
+            std.debug.assert(min_offset < std.math.maxInt(usize));
+            std.debug.assert(max_offset > std.math.minInt(usize));
+
+            segment.header.p_offset = min_offset;
+            segment.header.p_filesz = max_offset - min_offset;
+        }
+    }
 
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }
@@ -956,8 +992,39 @@ fn fixup(self: *@This(), input: anytype) !void {
         };
     }
 
-    // TODO: update program headers
-    // => at least p_offset needs to be updated accordingly
+    // Update program headers:
+    // * at least p_offset needs to be updated accordingly
+    // * remove mapping of removed sections
+    if (false) { // FIXME: reenable - SEGFAULTS for now, program headers need to be updated
+        for (self.program_segments.items) |*segment| {
+            if (segment.segment_mapping.items.len < 1) continue;
+
+            var found = false;
+            var max_offset: usize = std.math.minInt(usize);
+            var min_offset: usize = std.math.maxInt(usize);
+            for (segment.segment_mapping.items) |section_handle| {
+                const section = self.getSection(section_handle) orelse fatal(
+                    "section to segment mapping is invalid. Section for handle '{d}' does not exist",
+                    .{section_handle},
+                );
+
+                if (section.header.sh_type == std.elf.SHT_NULL) continue;
+                if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+
+                found = true;
+                min_offset = @min(min_offset, section.header.sh_offset);
+                max_offset = @max(max_offset, section.header.sh_offset + section.header.sh_size);
+            }
+
+            if (found) {
+                std.debug.assert(min_offset < std.math.maxInt(usize));
+                std.debug.assert(max_offset > std.math.minInt(usize));
+
+                segment.header.p_offset = min_offset;
+                segment.header.p_filesz = max_offset - min_offset;
+            }
+        }
+    }
 
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }
@@ -1025,7 +1092,28 @@ fn validate(self: *const @This()) !void {
         }
     }
 
-    // TODO: validate section to segment mapping
+    // Validate section to segment mapping.
+    for (self.program_segments.items) |*segment| {
+        for (segment.segment_mapping.items) |section_handle| {
+            const section = self.getSection(section_handle) orelse {
+                std.log.err("section to segment mapping is invalid. Section for handle '{d}' does not exist", .{section_handle});
+                continue;
+            };
+
+            if (section.header.sh_type == std.elf.SHT_NULL) continue;
+            if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+
+            const section_start = section.header.sh_offset;
+            const section_end = section_start + section.header.sh_size;
+            const segment_start = segment.header.p_offset;
+            const segment_end = segment_start + segment.header.p_filesz;
+
+            if (!isInRegion(section_start, section_end, segment_start, segment_end)) std.log.err(
+                "segment range 0x{x}-0x{x} must cover the entire section range 0x{x}-0x{x}",
+                .{ segment_start, segment_end, section_start, section_end },
+            );
+        }
+    }
 }
 
 fn getMaximumFileOffset(self: *const @This()) usize {

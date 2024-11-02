@@ -143,8 +143,10 @@ objcopy-strip-debug: ./reproduction/ls
 	./reproduction/binutils_strip_debug --help
 	# FIXME: st_shndx should already be updated in STT_SECTION symbols
 	# eu-elflint ./reproduction/binutils_strip_debug --strict
+	objcopy --strip-all ./reproduction/binutils ./reproduction/binutils_strip_debug_gnu --strip-all
 	@du -h ./reproduction/binutils
 	@du -h ./reproduction/binutils_strip_debug
+	@du -h ./reproduction/binutils_strip_debug_gnu
 
 .PHONY: objcopy-only-keep-debug
 objcopy-only-keep-debug: ./reproduction/ls
@@ -166,7 +168,6 @@ objcopy-strip-all: ./zig-out/bin/binutils
 	# NOTE: elflint does not like how zig creates NOBITS sections => not related to objcopy
 	# eu-elflint ./reproduction/binutils_strip_all --strict
 	objcopy --strip-all ./reproduction/binutils ./reproduction/binutils_strip_all_gnu --strip-all
-	zig build run -- readelf ./reproduction/binutils_strip_all -S
 	@du -h ./reproduction/binutils
 	@du -h ./reproduction/binutils_strip_all
 	@du -h ./reproduction/binutils_strip_all_gnu

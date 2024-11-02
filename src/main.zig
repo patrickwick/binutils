@@ -62,9 +62,9 @@ fn parseCommand(out: std.io.AnyWriter, args: []const []const u8) Command {
     }
 
     const command = args[0];
-    if (std.mem.eql(u8, command, "readelf")) return Command{ .readelf = parseReadElf(out, args[1..]) };
-    if (std.mem.eql(u8, command, "objdump")) return Command{ .objdump = parseObjDump(out, args[1..]) };
-    if (std.mem.eql(u8, command, "objcopy")) return Command{ .objcopy = parseObjCopy(out, args[1..]) };
+    if (std.mem.eql(u8, command, "readelf")) return .{ .readelf = parseReadElf(out, args[1..]) };
+    if (std.mem.eql(u8, command, "objdump")) return .{ .objdump = parseObjDump(out, args[1..]) };
+    if (std.mem.eql(u8, command, "objcopy")) return .{ .objcopy = parseObjCopy(out, args[1..]) };
     if (std.mem.eql(u8, command, "--help")) {
         printUsage(out);
         std.process.exit(0);
@@ -81,67 +81,65 @@ fn parseReadElf(out: std.io.AnyWriter, args: []const []const u8) readelf.ReadElf
 
     for (args) |arg| {
         if (arg.len == 0) continue;
-        if (arg[0] == '-') {
-            if (arg.len > 1 and arg[1] == '-') {
-                if (std.mem.eql(u8, arg, "--help")) {
-                    out.writeAll(READELF_USAGE) catch @panic("failed printing usage");
-                    std.process.exit(0);
-                }
+        if (arg.len > 1 and arg[0] == '-' and arg[1] == '-') {
+            if (std.mem.eql(u8, arg, "--help")) {
+                out.writeAll(READELF_USAGE) catch @panic("failed printing usage");
+                std.process.exit(0);
+            }
 
-                if (std.mem.eql(u8, arg, "--file-header")) {
-                    file_header = true;
-                    continue;
-                }
-
-                if (std.mem.eql(u8, arg, "--section-headers")) {
-                    section_headers = true;
-                    continue;
-                }
-
-                if (std.mem.eql(u8, arg, "--sections")) {
-                    section_headers = true;
-                    continue;
-                }
-
-                if (std.mem.eql(u8, arg, "--program-headers")) {
-                    program_headers = true;
-                    continue;
-                }
-
-                if (std.mem.eql(u8, arg, "--headers")) {
-                    file_header = true;
-                    section_headers = true;
-                    program_headers = true;
-                    continue;
-                }
-
-                if (std.mem.eql(u8, arg, "--segments")) {
-                    program_headers = true;
-                    continue;
-                }
-
-                if (std.mem.eql(u8, arg, "--symbols") or std.mem.eql(u8, arg, "--syms")) {
-                    symbols = true;
-                    continue;
-                }
-            } else {
-                // single dash args allow 0 to n options
-                for (arg[1..]) |c| {
-                    switch (c) {
-                        'h' => file_header = true,
-                        'S' => section_headers = true,
-                        'l' => program_headers = true,
-                        'e' => {
-                            file_header = true;
-                            section_headers = true;
-                            program_headers = true;
-                        },
-                        's' => symbols = true,
-                        else => fatalPrintUsageReadElf(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
-                    }
-                }
+            if (std.mem.eql(u8, arg, "--file-header")) {
+                file_header = true;
                 continue;
             }
+
+            if (std.mem.eql(u8, arg, "--section-headers")) {
+                section_headers = true;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--sections")) {
+                section_headers = true;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--program-headers")) {
+                program_headers = true;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--headers")) {
+                file_header = true;
+                section_headers = true;
+                program_headers = true;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--segments")) {
+                program_headers = true;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--symbols") or std.mem.eql(u8, arg, "--syms")) {
+                symbols = true;
+                continue;
+            }
+        } else if (arg[0] == '-') {
+            // single dash args allow 0 to n options
+            for (arg[1..]) |c| {
+                switch (c) {
+                    'h' => file_header = true,
+                    'S' => section_headers = true,
+                    'l' => program_headers = true,
+                    'e' => {
+                        file_header = true;
+                        section_headers = true;
+                        program_headers = true;
+                    },
+                    's' => symbols = true,
+                    else => fatalPrintUsageReadElf(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
+                }
+            }
+            continue;
         } else {
             if (file_path) |path| fatalPrintUsageReadElf(out, "expecting a single positional argument, got '{s}' and additional '{s}'", .{ path, arg });
             file_path = arg;
@@ -189,178 +187,176 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (arg.len == 0) continue;
-        if (arg[0] == '-') {
-            if (arg.len > 1 and arg[1] == '-') {
-                //  --help
-                if (std.mem.eql(u8, arg, "--help")) {
-                    out.writeAll(OBJCOPY_USAGE) catch std.process.exit(1);
-                    std.process.exit(0);
-                }
+        if (arg.len > 1 and arg[0] == '-' and arg[1] == '-') {
+            //  --help
+            if (std.mem.eql(u8, arg, "--help")) {
+                out.writeAll(OBJCOPY_USAGE) catch std.process.exit(1);
+                std.process.exit(0);
+            }
 
-                // --output-target=<value>
-                if (std.mem.startsWith(u8, arg, "--output-target")) {
-                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
-                        out,
-                        "unrecognized argument: '{s}', expecting --output-target=<value>",
-                        .{arg},
-                    );
-                    if (std.mem.eql(u8, split.second, "elf")) fatalPrintUsageObjCopy(out, "Only ELF output is supported at this point", .{});
-                    output_target = .elf;
-                    continue;
-                }
-
-                // --pad-to <addr>
-                if (std.mem.eql(u8, arg, "--pad-to")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        const opt = args[i + 1];
-                        const deduce_base = 0;
-                        const address = std.fmt.parseInt(usize, opt, deduce_base) catch fatalPrintUsageObjCopy(
-                            out,
-                            "unrecognized argument: '{s}', expecting --pad-to <addr>",
-                            .{arg},
-                        );
-                        pad_to = .{ .address = address };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --pad-to <addr>", .{arg});
-                    continue;
-                }
-
-                // --strip-debug
-                if (std.mem.eql(u8, arg, "--strip-debug")) {
-                    strip_debug = true;
-                    continue;
-                }
-
-                // --strip-all
-                if (std.mem.eql(u8, arg, "--strip-all")) {
-                    strip_all = true;
-                    continue;
-                }
-
-                // --only-section=<section>
-                if (std.mem.startsWith(u8, arg, "--only-section")) {
-                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
-                        out,
-                        "unrecognized argument: '{s}', expecting --only-section=<section>",
-                        .{arg},
-                    );
-                    only_section = .{ .section_name = split.second };
-                    continue;
-                }
-
-                // --only-keep-debug
-                if (std.mem.eql(u8, arg, "--only-keep-debug")) {
-                    only_keep_debug = true;
-                    continue;
-                }
-
-                // --add-gnu-debuglink=<file>
-                if (std.mem.startsWith(u8, arg, "--add-gnu-debuglink")) {
-                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
-                        out,
-                        "unrecognized {s} argument, expecting --add-gnu-debuglink=<file>",
-                        .{arg},
-                    );
-                    add_gnu_debuglink = .{ .link = split.second };
-                    continue;
-                }
-
-                // --extract-to <file>
-                if (std.mem.eql(u8, arg, "--extract-to")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        extract_to = .{ .target_path = args[i + 1] };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<alignment>", .{arg});
-                    continue;
-                }
-
-                // --compress-debug-sections
-                if (std.mem.eql(u8, arg, "--compress-debug-sections")) {
-                    compress_debug_sections = true;
-                    continue;
-                }
-
-                // --set-section-alignment <name>=<align>
-                if (std.mem.eql(u8, arg, "--set-section-alignment")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        const opt = args[i + 1];
-                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
-                            out,
-                            "unrecognized {s} argument: '{s}', expecting <name>=<alignment>",
-                            .{ arg, opt },
-                        );
-                        const alignment = std.fmt.parseInt(usize, split.second, 10) catch fatalPrintUsageObjCopy(
-                            out,
-                            "unrecognized argument: '{s}', expecting decimal alignment number argument",
-                            .{arg},
-                        );
-                        set_section_alignment = .{ .section_name = split.first, .alignment = alignment };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<alignment>", .{arg});
-                    continue;
-                }
-
-                // --set-section-flags <name>=<flags>
-                if (std.mem.eql(u8, arg, "--set-section-flags")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        const opt = args[i + 1];
-                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
-                            out,
-                            "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
-                            .{ arg, opt },
-                        );
-                        set_section_flags = .{ .section_name = split.first, .flags = parseSectionFlags(split.second) };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-flags <name>=<flags>", .{arg});
-                    continue;
-                }
-
-                // --add-section <name>=<file>
-                if (std.mem.eql(u8, arg, "--add-section")) {
-                    if (args.len > i + 1) {
-                        defer i += 1;
-                        const opt = args[i + 1];
-                        const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
-                            out,
-                            "unrecognized {s} argument: '{s}', expecting <name>=<file>",
-                            .{ arg, opt },
-                        );
-                        add_section = .{ .section_name = split.first, .file_path = split.second };
-                    } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-section <name>=<file>", .{arg});
-                    continue;
-                }
-            } else {
-                if (arg[1] == 'O') {
-                    const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
-                        out,
-                        "unrecognized argument: '{s}', expecting --output-target=<value>",
-                        .{arg},
-                    );
-                    if (std.mem.eql(u8, split.second, "elf")) fatalPrintUsageObjCopy(out, "Only ELF output is supported at this point", .{});
-                    output_target = .elf;
-                    continue;
-                }
-
-                // single dash args allow 0 to n options
-                for (arg[1..]) |c| {
-                    switch (c) {
-                        'h' => {
-                            out.writeAll(OBJCOPY_USAGE) catch std.process.exit(1);
-                            std.process.exit(0);
-                        },
-                        'j' => {
-                            if (args.len > i + 1) {
-                                i += 1;
-                                only_section = .{ .section_name = args[i] };
-                            } else fatalPrintUsageObjCopy(out, "unrecognized -j argument, expecting -j <section>", .{});
-                        },
-                        'g' => strip_debug = true,
-                        'S' => strip_all = true,
-                        else => fatalPrintUsageObjCopy(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
-                    }
-                }
+            // --output-target=<value>
+            if (std.mem.startsWith(u8, arg, "--output-target")) {
+                const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                    out,
+                    "unrecognized argument: '{s}', expecting --output-target=<value>",
+                    .{arg},
+                );
+                if (std.mem.eql(u8, split.second, "elf")) fatalPrintUsageObjCopy(out, "Only ELF output is supported at this point", .{});
+                output_target = .elf;
                 continue;
             }
+
+            // --pad-to <addr>
+            if (std.mem.eql(u8, arg, "--pad-to")) {
+                if (args.len > i + 1) {
+                    defer i += 1;
+                    const opt = args[i + 1];
+                    const deduce_base = 0;
+                    const address = std.fmt.parseInt(usize, opt, deduce_base) catch fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized argument: '{s}', expecting --pad-to <addr>",
+                        .{arg},
+                    );
+                    pad_to = .{ .address = address };
+                } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --pad-to <addr>", .{arg});
+                continue;
+            }
+
+            // --strip-debug
+            if (std.mem.eql(u8, arg, "--strip-debug")) {
+                strip_debug = true;
+                continue;
+            }
+
+            // --strip-all
+            if (std.mem.eql(u8, arg, "--strip-all")) {
+                strip_all = true;
+                continue;
+            }
+
+            // --only-section=<section>
+            if (std.mem.startsWith(u8, arg, "--only-section")) {
+                const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                    out,
+                    "unrecognized argument: '{s}', expecting --only-section=<section>",
+                    .{arg},
+                );
+                only_section = .{ .section_name = split.second };
+                continue;
+            }
+
+            // --only-keep-debug
+            if (std.mem.eql(u8, arg, "--only-keep-debug")) {
+                only_keep_debug = true;
+                continue;
+            }
+
+            // --add-gnu-debuglink=<file>
+            if (std.mem.startsWith(u8, arg, "--add-gnu-debuglink")) {
+                const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                    out,
+                    "unrecognized {s} argument, expecting --add-gnu-debuglink=<file>",
+                    .{arg},
+                );
+                add_gnu_debuglink = .{ .link = split.second };
+                continue;
+            }
+
+            // --extract-to <file>
+            if (std.mem.eql(u8, arg, "--extract-to")) {
+                if (args.len > i + 1) {
+                    defer i += 1;
+                    extract_to = .{ .target_path = args[i + 1] };
+                } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<alignment>", .{arg});
+                continue;
+            }
+
+            // --compress-debug-sections
+            if (std.mem.eql(u8, arg, "--compress-debug-sections")) {
+                compress_debug_sections = true;
+                continue;
+            }
+
+            // --set-section-alignment <name>=<align>
+            if (std.mem.eql(u8, arg, "--set-section-alignment")) {
+                if (args.len > i + 1) {
+                    defer i += 1;
+                    const opt = args[i + 1];
+                    const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized {s} argument: '{s}', expecting <name>=<alignment>",
+                        .{ arg, opt },
+                    );
+                    const alignment = std.fmt.parseInt(usize, split.second, 10) catch fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized argument: '{s}', expecting decimal alignment number argument",
+                        .{arg},
+                    );
+                    set_section_alignment = .{ .section_name = split.first, .alignment = alignment };
+                } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-alignment <name>=<alignment>", .{arg});
+                continue;
+            }
+
+            // --set-section-flags <name>=<flags>
+            if (std.mem.eql(u8, arg, "--set-section-flags")) {
+                if (args.len > i + 1) {
+                    defer i += 1;
+                    const opt = args[i + 1];
+                    const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized {s} argument: '{s}', expecting <name>=<flags>",
+                        .{ arg, opt },
+                    );
+                    set_section_flags = .{ .section_name = split.first, .flags = parseSectionFlags(split.second) };
+                } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --set-section-flags <name>=<flags>", .{arg});
+                continue;
+            }
+
+            // --add-section <name>=<file>
+            if (std.mem.eql(u8, arg, "--add-section")) {
+                if (args.len > i + 1) {
+                    defer i += 1;
+                    const opt = args[i + 1];
+                    const split = splitOption(opt) orelse fatalPrintUsageObjCopy(
+                        out,
+                        "unrecognized {s} argument: '{s}', expecting <name>=<file>",
+                        .{ arg, opt },
+                    );
+                    add_section = .{ .section_name = split.first, .file_path = split.second };
+                } else fatalPrintUsageObjCopy(out, "unrecognized {s} argument, expecting --add-section <name>=<file>", .{arg});
+                continue;
+            }
+        } else if (arg[0] == '-') {
+            if (arg[1] == 'O') {
+                const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                    out,
+                    "unrecognized argument: '{s}', expecting --output-target=<value>",
+                    .{arg},
+                );
+                if (!std.mem.eql(u8, split.second, "elf")) fatalPrintUsageObjCopy(out, "Only ELF output is supported at this point", .{});
+                output_target = .elf;
+                continue;
+            }
+
+            // single dash args allow 0 to n options
+            for (arg[1..]) |c| {
+                switch (c) {
+                    'h' => {
+                        out.writeAll(OBJCOPY_USAGE) catch std.process.exit(1);
+                        std.process.exit(0);
+                    },
+                    'j' => {
+                        if (args.len > i + 1) {
+                            i += 1;
+                            only_section = .{ .section_name = args[i] };
+                        } else fatalPrintUsageObjCopy(out, "unrecognized -j argument, expecting -j <section>", .{});
+                    },
+                    'g' => strip_debug = true,
+                    'S' => strip_all = true,
+                    else => fatalPrintUsageObjCopy(out, "unrecognized argument '-{s}'", .{[_]u8{c}}),
+                }
+            }
+            continue;
         } else {
             if (in_file_path == null) {
                 in_file_path = arg;

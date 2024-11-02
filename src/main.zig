@@ -480,13 +480,15 @@ const OBJCOPY_USAGE =
     \\      Compress DWARF debug sections with zlib
     \\
     \\  --set-section-alignment <name>=<align>
-    \\      Set alignment of section <name> to <align> bytes. Must be a power of two.
+    \\      Set address alignment of section <name> to <align> bytes. Must be a power of two.
+    \\      This only affects the section address, not the section offset within the file.
     \\
     \\  --set-section-flags <name>=<flags>
     \\      Set flags of section <name> to <flags> represented as a comma separated set of flags.
     \\
     \\  --add-section <name>=<file>
     \\      Add file content from <file> with the a new section named <name>.
+    \\      The address alginment (sh_addralign) is set to 4 byte by default but can be overwritten using the --set-section-alignment option.
     \\
     \\General Options:
     \\

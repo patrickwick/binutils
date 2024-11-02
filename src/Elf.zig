@@ -4,7 +4,21 @@ const builtin = @import("builtin");
 const testing = @import("testing.zig");
 
 const FATAL_EXIT_CODE = 1;
-pub const SECTION_ALIGN = @alignOf(*anyopaque);
+
+// The alignment within the file must at least be of the input file class.
+// See ELF spec 1.2 https://refspecs.linuxbase.org/elf/elf.pdf:
+// "All data structures that the object file format defines follow the "natural" size and alignment
+// guidelines for the relevant class. If necessary, data structures contain explicit padding to ensure
+// 4-byte alignment for 4-byte objects, to force structure sizes to a multiple of 4, and so on.
+// Data also have suitable alignment from the beginning of the file. Thus, for example, a structure
+// containing an Elf32_Addr member will be aligned on a 4-byte boundary within the file."
+//
+// This implementation always sets the alignment to 8 bytes of ELFCLASS64 even if the input class is
+// ELFCLASS32 for simplicity. Sections and headers will only be relocated to an aligned boundary if
+// they need to be moved within the file, so the input alignment is preserved otherwise.
+pub const SECTION_ALIGN = 8; // sh_offset alignment of section content
+pub const SECTION_HEADER_ALIGN = 8; // e_shoff alignment, no padding between section headers
+pub const PROGRAM_HEADER_ALIGN = 8; // e_phoff alignment, no padding between program headers
 
 /// Stores ELF information in native endianess and provides helpers for modifications and converting the file back to target endianness.
 pub const Elf = @This();
@@ -300,8 +314,12 @@ fn fixup(self: *@This(), input: anytype) !void {
                 previous.header.sh_offset + previous.header.sh_size,
             });
 
-            const alignment = section.header.sh_addralign;
-            section.header.sh_offset = std.mem.alignForward(usize, previous.header.sh_offset + previous.header.sh_size, alignment);
+            section.header.sh_offset = std.mem.alignForward(
+                usize,
+                previous.header.sh_offset + previous.header.sh_size,
+                SECTION_ALIGN,
+            );
+
             std.log.debug("  moving section content to 0x{x}-0x{x}", .{
                 section.header.sh_offset,
                 section.header.sh_offset + self.e_shoff + self.e_shnum * self.e_shentsize,
@@ -323,8 +341,12 @@ fn fixup(self: *@This(), input: anytype) !void {
                 self.e_shoff + self.e_shnum * self.e_shentsize,
             });
 
-            const alignment = 8;
-            self.e_shoff = std.mem.alignForward(usize, section.header.sh_offset + section.header.sh_size, alignment);
+            self.e_shoff = std.mem.alignForward(
+                usize,
+                section.header.sh_offset + section.header.sh_size,
+                SECTION_HEADER_ALIGN,
+            );
+
             std.log.debug("  moving section headers to 0x{x}-0x{x}", .{
                 self.e_shoff,
                 self.e_shoff + self.e_shnum * self.e_shentsize,
@@ -366,8 +388,11 @@ fn fixup(self: *@This(), input: anytype) !void {
                 self.e_phoff + self.e_phnum * self.e_phentsize,
             });
 
-            const alignment = 8;
-            self.e_phoff = std.mem.alignForward(usize, section.header.sh_offset + section.header.sh_size, alignment);
+            self.e_phoff = std.mem.alignForward(
+                usize,
+                section.header.sh_offset + section.header.sh_size,
+                PROGRAM_HEADER_ALIGN,
+            );
 
             // moving the headers also may require shifting down the following sections
             // => shift next section immediately instead of relocating the headers again next iteration
@@ -391,7 +416,7 @@ fn fixup(self: *@This(), input: anytype) !void {
         }
     }
 
-    // update symbol table st_shndx inside each STT_SECTION symbol if the index has changed? Each of these symbols stores a the shstrtab index.
+    // Update STT_SECTION symbols that reference the section name table if it changed. Each stores the e_shstrndx inside st_shndx.
     for (self.sections.items) |*section| {
         if (section.header.sh_type == std.elf.SHT_SYMTAB) switch (self.e_ident.ei_class) {
             inline else => |class| {
@@ -520,7 +545,7 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     const name_index = try self.addSectionName(source, section_name);
 
     // append at the very end after all headers and sections
-    const offset = self.getMaximumFileOffset();
+    const offset = std.mem.alignForward(usize, self.getMaximumFileOffset(), SECTION_ALIGN);
 
     const no_flags = 0;
     const default_address_alignment = 4;
@@ -549,9 +574,10 @@ pub fn addSection(self: *@This(), source: anytype, section_name: []const u8, con
     });
     self.e_shnum = self.sections.items.len;
 
-    // overwrite offset again after fixup since the new header was not accounted
+    // required to correct for the additional section header that can push other sections or headers down
     try self.fixup(source);
-    self.sections.items[self.sections.items.len - 1].header.sh_offset = self.getMaximumFileOffset();
+    // update the sh_offset again to account for moved sections or headers during fixup
+    self.sections.items[self.sections.items.len - 1].header.sh_offset = std.mem.alignForward(usize, self.getMaximumFileOffset(), SECTION_ALIGN);
 }
 
 pub fn getSortedSectionPointersAlloc(self: *const @This(), allocator: std.mem.Allocator) !std.ArrayList(*Section) {
@@ -570,7 +596,7 @@ pub fn getSortedSectionPointersAlloc(self: *const @This(), allocator: std.mem.Al
     return sorted;
 }
 
-pub fn updateSectionContent(self: *@This(), input: anytype, handle: Section.Handle, content: []align(SECTION_ALIGN) u8) !void {
+pub fn updateSectionContent(self: *@This(), input: anytype, handle: Section.Handle, content: Section.Data) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
@@ -595,15 +621,12 @@ pub fn updateSectionAlignment(self: *@This(), input: anytype, handle: Section.Ha
     for (self.sections.items) |*section| {
         if (section.handle == handle) {
             section.header.sh_addralign = @intCast(alignment);
-            try self.fixup(input);
             break;
         }
     } else return error.SectionNotFound;
 }
 
 fn getMaximumFileOffset(self: *const @This()) usize {
-    const default_file_alignment = 8;
-
     var highest: usize = 0;
     for (self.sections.items) |*section| {
         if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
@@ -617,7 +640,7 @@ fn getMaximumFileOffset(self: *const @This()) usize {
     const program_headers_end = self.e_phoff + self.e_phnum * self.e_phentsize;
     if (highest < program_headers_end) highest = program_headers_end;
 
-    return std.mem.alignForward(usize, highest, default_file_alignment);
+    return highest;
 }
 
 // Precondition: shstrtab is located in sections at index e_shstrndx

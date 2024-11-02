@@ -285,27 +285,17 @@ fn fixup(self: *@This(), input: anytype) !void {
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
     comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
 
-    // relocate headers and sections contents due to size increase if needed
-    var sorted_sections = try self.sections.clone();
+    var sorted_sections = try self.getSortedSectionPointersAlloc(self.allocator);
     defer sorted_sections.deinit();
 
-    const Sort = struct {
-        fn lessThan(context: *const @This(), left: Section, right: Section) bool {
-            _ = context;
-            return left.header.sh_offset < right.header.sh_offset;
-        }
-    };
-    var sort_context = Sort{};
-    std.mem.sort(Section, sorted_sections.items, &sort_context, Sort.lessThan);
-
-    var previous = &sorted_sections.items[0];
-    for (sorted_sections.items[1..], 1..) |*section, section_i| {
+    var previous = sorted_sections.items[0];
+    for (sorted_sections.items[1..], 1..) |section, section_i| {
         if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
         defer previous = section;
 
         // relocate section content
         if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
-            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with section '{s}' 0x{x}-0x{x}", .{
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with previous section '{s}' 0x{x}-0x{x}", .{
                 self.getSectionName(section),
                 section.header.sh_offset,
                 section.header.sh_offset + section.header.sh_size,
@@ -320,9 +310,10 @@ fn fixup(self: *@This(), input: anytype) !void {
                 SECTION_ALIGN,
             );
 
-            std.log.debug("  moving section content to 0x{x}-0x{x}", .{
+            std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
+                self.getSectionName(section),
                 section.header.sh_offset,
-                section.header.sh_offset + self.e_shoff + self.e_shnum * self.e_shentsize,
+                section.header.sh_offset + section.header.sh_size,
             });
         }
 
@@ -443,6 +434,8 @@ fn fixup(self: *@This(), input: anytype) !void {
             },
         };
     }
+
+    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }
 
 fn validate(self: *const @This()) !void {

@@ -76,29 +76,40 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
     defer manifest.deinit();
 
     const in_file_path = target.input_file.getPath2(b, step);
+
     _ = try manifest.addFile(in_file_path, null);
 
     manifest.hash.add(target.options.output_target);
+
     manifest.hash.add(target.options.only_section != null);
     if (target.options.only_section) |o| manifest.hash.addBytes(o.section_name);
+
     manifest.hash.add(target.options.pad_to != null);
     if (target.options.pad_to) |o| manifest.hash.add(o.address);
+
     manifest.hash.add(target.options.strip_debug);
+
     manifest.hash.add(target.options.strip_all);
+
     manifest.hash.add(target.options.only_keep_debug);
+
     manifest.hash.add(target.options.add_gnu_debuglink != null);
     if (target.options.add_gnu_debuglink) |o| manifest.hash.addBytes(o.link);
+
     manifest.hash.add(target.options.compress_debug_sections);
+
     manifest.hash.add(target.options.set_section_alignment != null);
     if (target.options.set_section_alignment) |o| {
         manifest.hash.addBytes(o.section_name);
         manifest.hash.add(o.alignment);
     }
+
     manifest.hash.add(target.options.set_section_flags != null);
     if (target.options.set_section_flags) |o| {
         manifest.hash.addBytes(o.section_name);
         manifest.hash.add(@as(u14, @bitCast(o.flags)));
     }
+
     manifest.hash.add(target.options.add_section != null);
     const add_section = if (target.options.add_section) |o| blk: {
         manifest.hash.addBytes(o.section_name);
@@ -109,6 +120,7 @@ fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
             .file_path = path,
         };
     } else null;
+
     manifest.hash.add(target.options.extract_to_separate_file != null);
     if (target.options.extract_to_separate_file) |o| manifest.hash.addBytes(o);
 

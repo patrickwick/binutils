@@ -520,7 +520,7 @@ test printElfHeader {
     var out_buffer = [_]u8{0} ** (expected.len * 2);
     var out_buffer_stream = std.io.FixedBufferStream([]u8){ .buffer = &out_buffer, .pos = 0 };
 
-    const elf = .{
+    const elf = Elf{
         .section_handle_counter = 1,
         .e_ident = .{
             .ei_class = .elfclass64,

@@ -281,229 +281,6 @@ pub inline fn getNextSectionHandle(self: *@This()) Section.Handle {
     return self.section_handle_counter;
 }
 
-fn fixup(self: *@This(), input: anytype) !void {
-    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
-    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
-
-    var sorted_sections = try self.getSortedSectionPointersAlloc(self.allocator);
-    defer sorted_sections.deinit();
-
-    var previous = sorted_sections.items[0];
-    for (sorted_sections.items[1..], 1..) |section, section_i| {
-        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
-        defer previous = section;
-
-        // relocate section content
-        if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
-            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with previous section '{s}' 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-                self.getSectionName(previous),
-                previous.header.sh_offset,
-                previous.header.sh_offset + previous.header.sh_size,
-            });
-
-            section.header.sh_offset = std.mem.alignForward(
-                usize,
-                previous.header.sh_offset + previous.header.sh_size,
-                SECTION_ALIGN,
-            );
-
-            std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-            });
-        }
-
-        // relocate section headers
-        if (isIntersect(
-            section.header.sh_offset,
-            section.header.sh_offset + section.header.sh_size,
-            self.e_shoff,
-            self.e_shoff + self.e_shnum * self.e_shentsize,
-        )) {
-            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with section headers 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-                self.e_shoff,
-                self.e_shoff + self.e_shnum * self.e_shentsize,
-            });
-
-            self.e_shoff = std.mem.alignForward(
-                usize,
-                section.header.sh_offset + section.header.sh_size,
-                SECTION_HEADER_ALIGN,
-            );
-
-            std.log.debug("  moving section headers to 0x{x}-0x{x}", .{
-                self.e_shoff,
-                self.e_shoff + self.e_shnum * self.e_shentsize,
-            });
-
-            // moving the headers also may require shifting down the following sections
-            // => shift next section immediately instead of relocating the headers again next iteration
-            if (section_i < self.sections.items.len - 1) {
-                const next_section = &self.sections.items[section_i + 1];
-                if (isIntersect(
-                    self.e_shoff,
-                    self.e_shoff + self.e_shnum * self.e_shentsize,
-                    next_section.header.sh_offset,
-                    next_section.header.sh_offset + next_section.header.sh_size,
-                )) {
-                    next_section.header.sh_offset = self.e_shoff + self.e_shnum * self.e_shentsize;
-
-                    std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
-                        self.getSectionName(section),
-                        next_section.header.sh_offset,
-                        next_section.header.sh_offset + next_section.header.sh_size,
-                    });
-                }
-            }
-        }
-
-        // relocate program headers
-        if (isIntersect(
-            section.header.sh_offset,
-            section.header.sh_offset + section.header.sh_size,
-            self.e_phoff,
-            self.e_phoff + self.e_phnum * self.e_phentsize,
-        )) {
-            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with program headers 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-                self.e_phoff,
-                self.e_phoff + self.e_phnum * self.e_phentsize,
-            });
-
-            self.e_phoff = std.mem.alignForward(
-                usize,
-                section.header.sh_offset + section.header.sh_size,
-                PROGRAM_HEADER_ALIGN,
-            );
-
-            // moving the headers also may require shifting down the following sections
-            // => shift next section immediately instead of relocating the headers again next iteration
-            if (section_i < self.sections.items.len - 1) {
-                const next_section = &self.sections.items[section_i + 1];
-                if (isIntersect(
-                    self.e_phoff,
-                    self.e_phoff + self.e_phnum * self.e_phentsize,
-                    next_section.header.sh_offset,
-                    next_section.header.sh_offset + next_section.header.sh_size,
-                )) {
-                    next_section.header.sh_offset = self.e_phoff + self.e_phnum * self.e_phentsize;
-
-                    std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
-                        self.getSectionName(section),
-                        next_section.header.sh_offset,
-                        next_section.header.sh_offset + next_section.header.sh_size,
-                    });
-                }
-            }
-        }
-    }
-
-    // Update STT_SECTION symbols that reference the section name table if it changed. Each stores the e_shstrndx inside st_shndx.
-    for (self.sections.items) |*section| {
-        if (section.header.sh_type == std.elf.SHT_SYMTAB) switch (self.e_ident.ei_class) {
-            inline else => |class| {
-                const SymbolRef = if (class == .elfclass64) std.elf.Elf64_Sym else std.elf.Elf32_Sym;
-
-                if (@sizeOf(SymbolRef) != section.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
-                    section.header.sh_entsize,
-                    @sizeOf(SymbolRef),
-                });
-
-                // modifies content in place
-                const symtab_content = try section.readContent(input);
-                const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
-                for (symbol_entries) |*entry| {
-                    // bytes need to be swapped if native endianness does not match
-                    if (self.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, entry);
-                    defer if (self.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, entry);
-
-                    const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry.*));
-                    if (st_type == .section) {
-                        entry.st_shndx = @intCast(self.e_shstrndx);
-                    }
-                }
-            },
-        };
-    }
-
-    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
-}
-
-fn validate(self: *const @This()) !void {
-    var sorted_sections = try self.sections.clone();
-    defer sorted_sections.deinit();
-
-    const Sort = struct {
-        fn lessThan(context: *const @This(), left: Section, right: Section) bool {
-            _ = context;
-            return left.header.sh_offset < right.header.sh_offset;
-        }
-    };
-    var sort_context = Sort{};
-    std.mem.sort(Section, sorted_sections.items, &sort_context, Sort.lessThan);
-
-    var previous = &sorted_sections.items[0];
-    for (sorted_sections.items[1..]) |*section| {
-        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
-        defer previous = section;
-
-        // content collision
-        if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
-            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with section '{s}' 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-                self.getSectionName(previous),
-                previous.header.sh_offset,
-                previous.header.sh_offset + previous.header.sh_size,
-            });
-        }
-
-        // section header collision
-        if (isIntersect(
-            section.header.sh_offset,
-            section.header.sh_offset + section.header.sh_size,
-            self.e_shoff,
-            self.e_shoff + self.e_shnum * self.e_shentsize,
-        )) {
-            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with section headers 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-                self.e_shoff,
-                self.e_shoff + self.e_shnum * self.e_shentsize,
-            });
-        }
-
-        // program header collision
-        if (isIntersect(
-            section.header.sh_offset,
-            section.header.sh_offset + section.header.sh_size,
-            self.e_phoff,
-            self.e_phoff + self.e_phnum * self.e_phentsize,
-        )) {
-            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with program headers 0x{x}-0x{x}", .{
-                self.getSectionName(section),
-                section.header.sh_offset,
-                section.header.sh_offset + section.header.sh_size,
-                self.e_phoff,
-                self.e_phoff + self.e_phnum * self.e_phentsize,
-            });
-        }
-    }
-
-    // TODO: validate section to segment mapping
-}
-
 // NOTE: symbol tables can list sections names redudantely to strtab using STT_SECTION symbols.
 // This function does **not** add such a symbol.
 pub fn addSectionName(self: *@This(), source: anytype, section_name: []const u8) !usize {
@@ -617,23 +394,6 @@ pub fn updateSectionAlignment(self: *@This(), input: anytype, handle: Section.Ha
             break;
         }
     } else return error.SectionNotFound;
-}
-
-fn getMaximumFileOffset(self: *const @This()) usize {
-    var highest: usize = 0;
-    for (self.sections.items) |*section| {
-        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
-        const section_end = section.header.sh_offset + section.header.sh_size;
-        if (highest < section_end) highest = section_end;
-    }
-
-    const section_headers_end = self.e_shoff + self.e_shnum * self.e_shentsize;
-    if (highest < section_headers_end) highest = section_headers_end;
-
-    const program_headers_end = self.e_phoff + self.e_phnum * self.e_phentsize;
-    if (highest < program_headers_end) highest = program_headers_end;
-
-    return highest;
 }
 
 // Precondition: shstrtab is located in sections at index e_shstrndx
@@ -964,6 +724,246 @@ inline fn isIntersect(a_min: anytype, a_max: anytype, b_min: anytype, b_max: any
     std.debug.assert(a_min <= a_max);
     std.debug.assert(b_min <= b_max);
     return a_min < b_max and b_min < a_max;
+}
+
+fn fixup(self: *@This(), input: anytype) !void {
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "seekableStream"));
+    comptime std.debug.assert(std.meta.hasMethod(@TypeOf(input), "reader"));
+
+    var sorted_sections = try self.getSortedSectionPointersAlloc(self.allocator);
+    defer sorted_sections.deinit();
+
+    var previous = sorted_sections.items[0];
+    for (sorted_sections.items[1..], 1..) |section, section_i| {
+        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+        defer previous = section;
+
+        // relocate section content
+        if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with previous section '{s}' 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.getSectionName(previous),
+                previous.header.sh_offset,
+                previous.header.sh_offset + previous.header.sh_size,
+            });
+
+            section.header.sh_offset = std.mem.alignForward(
+                usize,
+                previous.header.sh_offset + previous.header.sh_size,
+                SECTION_ALIGN,
+            );
+
+            std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+            });
+        }
+
+        // relocate section headers
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_shoff,
+            self.e_shoff + self.e_shnum * self.e_shentsize,
+        )) {
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with section headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_shoff,
+                self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+
+            self.e_shoff = std.mem.alignForward(
+                usize,
+                section.header.sh_offset + section.header.sh_size,
+                SECTION_HEADER_ALIGN,
+            );
+
+            std.log.debug("  moving section headers to 0x{x}-0x{x}", .{
+                self.e_shoff,
+                self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+
+            // moving the headers also may require shifting down the following sections
+            // => shift next section immediately instead of relocating the headers again next iteration
+            if (section_i < self.sections.items.len - 1) {
+                const next_section = &self.sections.items[section_i + 1];
+                if (isIntersect(
+                    self.e_shoff,
+                    self.e_shoff + self.e_shnum * self.e_shentsize,
+                    next_section.header.sh_offset,
+                    next_section.header.sh_offset + next_section.header.sh_size,
+                )) {
+                    next_section.header.sh_offset = self.e_shoff + self.e_shnum * self.e_shentsize;
+
+                    std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
+                        self.getSectionName(section),
+                        next_section.header.sh_offset,
+                        next_section.header.sh_offset + next_section.header.sh_size,
+                    });
+                }
+            }
+        }
+
+        // relocate program headers
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_phoff,
+            self.e_phoff + self.e_phnum * self.e_phentsize,
+        )) {
+            std.log.debug("section '{s}' 0x{x}-0x{x} overlaps with program headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_phoff,
+                self.e_phoff + self.e_phnum * self.e_phentsize,
+            });
+
+            self.e_phoff = std.mem.alignForward(
+                usize,
+                section.header.sh_offset + section.header.sh_size,
+                PROGRAM_HEADER_ALIGN,
+            );
+
+            // moving the headers also may require shifting down the following sections
+            // => shift next section immediately instead of relocating the headers again next iteration
+            if (section_i < self.sections.items.len - 1) {
+                const next_section = &self.sections.items[section_i + 1];
+                if (isIntersect(
+                    self.e_phoff,
+                    self.e_phoff + self.e_phnum * self.e_phentsize,
+                    next_section.header.sh_offset,
+                    next_section.header.sh_offset + next_section.header.sh_size,
+                )) {
+                    next_section.header.sh_offset = self.e_phoff + self.e_phnum * self.e_phentsize;
+
+                    std.log.debug("  moving '{s}' section content to 0x{x}-0x{x}", .{
+                        self.getSectionName(section),
+                        next_section.header.sh_offset,
+                        next_section.header.sh_offset + next_section.header.sh_size,
+                    });
+                }
+            }
+        }
+    }
+
+    // Update STT_SECTION symbols that reference the section name table if it changed. Each stores the e_shstrndx inside st_shndx.
+    for (self.sections.items) |*section| {
+        if (section.header.sh_type == std.elf.SHT_SYMTAB) switch (self.e_ident.ei_class) {
+            inline else => |class| {
+                const SymbolRef = if (class == .elfclass64) std.elf.Elf64_Sym else std.elf.Elf32_Sym;
+
+                if (@sizeOf(SymbolRef) != section.header.sh_entsize) fatal("unexpected symbol table entry size {d}, expected {d}", .{
+                    section.header.sh_entsize,
+                    @sizeOf(SymbolRef),
+                });
+
+                // modifies content in place
+                const symtab_content = try section.readContent(input);
+                const symbol_entries = std.mem.bytesAsSlice(SymbolRef, symtab_content);
+                for (symbol_entries) |*entry| {
+                    // bytes need to be swapped if native endianness does not match
+                    if (self.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, entry);
+                    defer if (self.isEndianMismatch()) std.mem.byteSwapAllFields(SymbolRef, entry);
+
+                    const st_type = SymbolType.fromRawType(SymbolRef.st_type(entry.*));
+                    if (st_type == .section) {
+                        entry.st_shndx = @intCast(self.e_shstrndx);
+                    }
+                }
+            },
+        };
+    }
+
+    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
+}
+
+fn validate(self: *const @This()) !void {
+    var sorted_sections = try self.sections.clone();
+    defer sorted_sections.deinit();
+
+    const Sort = struct {
+        fn lessThan(context: *const @This(), left: Section, right: Section) bool {
+            _ = context;
+            return left.header.sh_offset < right.header.sh_offset;
+        }
+    };
+    var sort_context = Sort{};
+    std.mem.sort(Section, sorted_sections.items, &sort_context, Sort.lessThan);
+
+    var previous = &sorted_sections.items[0];
+    for (sorted_sections.items[1..]) |*section| {
+        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+        defer previous = section;
+
+        // content collision
+        if (section.header.sh_offset < previous.header.sh_offset + previous.header.sh_size) {
+            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with section '{s}' 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.getSectionName(previous),
+                previous.header.sh_offset,
+                previous.header.sh_offset + previous.header.sh_size,
+            });
+        }
+
+        // section header collision
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_shoff,
+            self.e_shoff + self.e_shnum * self.e_shentsize,
+        )) {
+            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with section headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_shoff,
+                self.e_shoff + self.e_shnum * self.e_shentsize,
+            });
+        }
+
+        // program header collision
+        if (isIntersect(
+            section.header.sh_offset,
+            section.header.sh_offset + section.header.sh_size,
+            self.e_phoff,
+            self.e_phoff + self.e_phnum * self.e_phentsize,
+        )) {
+            std.log.err("section '{s}' 0x{x}-0x{x} overlaps with program headers 0x{x}-0x{x}", .{
+                self.getSectionName(section),
+                section.header.sh_offset,
+                section.header.sh_offset + section.header.sh_size,
+                self.e_phoff,
+                self.e_phoff + self.e_phnum * self.e_phentsize,
+            });
+        }
+    }
+
+    // TODO: validate section to segment mapping
+}
+
+fn getMaximumFileOffset(self: *const @This()) usize {
+    var highest: usize = 0;
+    for (self.sections.items) |*section| {
+        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+        const section_end = section.header.sh_offset + section.header.sh_size;
+        if (highest < section_end) highest = section_end;
+    }
+
+    const section_headers_end = self.e_shoff + self.e_shnum * self.e_shentsize;
+    if (highest < section_headers_end) highest = section_headers_end;
+
+    const program_headers_end = self.e_phoff + self.e_phnum * self.e_phentsize;
+    if (highest < program_headers_end) highest = program_headers_end;
+
+    return highest;
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {

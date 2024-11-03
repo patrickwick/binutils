@@ -64,12 +64,15 @@ pub fn getOutputSeparatedDebug(self: *const @This()) ?std.Build.LazyPath {
     return if (self.output_debug_file) |*file| .{ .generated = .{ .file = file } } else null;
 }
 
-fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
-    _ = options;
+// NOTE: zig v0.14.x
+// fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
+//  _ = options;
+fn make(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
+    _ = prog_node;
 
     const b = step.owner;
     const target: *ObjCopy = @fieldParentPtr("step", step);
-    try step.singleUnchangingWatchInput(target.input_file);
+    // try step.singleUnchangingWatchInput(target.input_file); // NOTE: zig 0.14.x
 
     var manifest = b.graph.cache.obtain();
     defer manifest.deinit();

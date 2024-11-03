@@ -371,13 +371,14 @@ inline fn intToHex(data: anytype) [@sizeOf(@TypeOf(data)) * 2]u8 {
     return std.fmt.bytesToHex(bytes, .lower);
 }
 
-fn verboseFileType(e_type: std.elf.ET) []const u8 {
+fn verboseFileType(e_type: Elf.Type) []const u8 {
     return switch (e_type) {
-        .NONE => "NONE (None)",
-        .REL => "REL (Relocatable file)",
-        .EXEC => "EXEC (Executable file)",
-        .DYN => "DYN (Position-Independent Executable or Shared Object file)",
-        .CORE => "CORE (Core file)",
+        .none => "NONE (None)",
+        .relocatable => "REL (Relocatable file)",
+        .executable => "EXEC (Executable file)",
+        .dynamic => "DYN (Position-Independent Executable or Shared Object file)",
+        .core => "CORE (Core file)",
+        else => "Unknown Type",
     };
 }
 
@@ -526,10 +527,10 @@ test printElfHeader {
             .ei_class = .elfclass64,
             .ei_data = .little,
             .ei_version = .ev_current,
-            .ei_osabi = std.elf.OSABI.NONE,
+            .ei_osabi = .NONE,
             .ei_abiversion = 0,
         },
-        .e_type = std.elf.ET.DYN,
+        .e_type = .dynamic,
         .e_machine = std.elf.EM.X86_64,
         .e_version = .ev_current,
         .e_entry = 0x128,

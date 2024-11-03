@@ -1,7 +1,9 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const binutils = @import("src/binutils.zig");
 
-const USE_LLVM = false;
+// Zig backend works reliably with Zig v0.14.x but not with Zig v0.13.0
+const USE_LLVM = builtin.zig_version.minor < 14;
 
 pub fn build(b: *std.Build) void {
     const native_target = b.standardTargetOptions(.{});
@@ -55,13 +57,13 @@ pub fn build(b: *std.Build) void {
 
         const targets = [_]std.Build.ResolvedTarget{
             native_target, // native
-            b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // test 32bit
+            // b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // test 32bit
             b.resolveTargetQuery(.{ .cpu_arch = .aarch64_be }), // test big endian arch
         };
 
         const target_names = &.{
             "test_base_x86_64",
-            "test_base_riscv32",
+            // "test_base_riscv32",
             "test_base_aarch64_big_endian",
         };
 

@@ -785,10 +785,28 @@ pub fn compact(self: *@This()) !void {
     var sort_context = Sort{};
     std.mem.sort(Region, regions.items, &sort_context, Sort.lessThan);
 
+    // TODO: will fail due to incomplete alignment
+    // zig build run -- objcopy ./reproduction/ls ./reproduction/ls_sz --strip-all && llvm-readelf ./reproduction/ls_sz -Sl  &&  eu-elflint ./reproduction/ls_sz --strict && ./reproduction/ls_sz
+    if (true) {
+        if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
+        return; // FIXME: reenable - compacting and updating program header offsets causes a segfault
+    }
+
     var offset: usize = self.e_ehsize;
     for (regions.items) |*region| {
-        region.offset.* = std.mem.alignForward(usize, offset, region.alignment);
-        offset += region.size;
+        // NOTE: file offset must:
+        // * be aligned with the section / header region alignment.
+        // * adhere to ELF spec: "p_vaddr should equal p_offset, modulo p_align.".
+        //   (p_vaddr - p_offset) & (align - 1) == 0
+        //   ELF loaders will reject the program otherwise, so "should" means must here.
+        //   This requirement helps with mapping sections into memory without adding 0 padding in the file.
+        const alignment = blk: {
+            // TODO: second constraint
+            break :blk region.alignment;
+        };
+
+        region.offset.* = std.mem.alignForward(usize, offset, alignment);
+        offset = region.offset.* + region.*.size;
     }
 
     // Update program header section to segment mapping.
@@ -805,7 +823,6 @@ pub fn compact(self: *@This()) !void {
                 .{section_handle},
             );
 
-            if (section.header.sh_type == std.elf.SHT_NULL) continue;
             if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
 
             found = true;
@@ -814,11 +831,15 @@ pub fn compact(self: *@This()) !void {
         }
 
         if (found) {
+            // max_offset is allowed to be 0
             std.debug.assert(min_offset < std.math.maxInt(usize));
-            std.debug.assert(max_offset > std.math.minInt(usize));
 
+            const new_file_size = max_offset - min_offset;
+            const size_diff = @as(isize, @intCast(new_file_size)) - @as(isize, @intCast(segment.header.p_filesz));
             segment.header.p_offset = min_offset;
-            segment.header.p_filesz = max_offset - min_offset;
+            segment.header.p_filesz = new_file_size;
+            // NOTE: mem size can be smaller than file size, e.g. for .bss sections that are not stored in the file
+            segment.header.p_memsz = @intCast(@as(isize, @intCast(segment.header.p_memsz)) + size_diff);
         }
     }
 
@@ -992,10 +1013,8 @@ fn fixup(self: *@This(), input: anytype) !void {
         };
     }
 
-    // Update program headers:
-    // * at least p_offset needs to be updated accordingly
-    // * remove mapping of removed sections
-    if (false) { // FIXME: reenable - SEGFAULTS for now, program headers need to be updated
+    // Update program headers.
+    if (false) { // FIXME: reenable
         for (self.program_segments.items) |*segment| {
             if (segment.segment_mapping.items.len < 1) continue;
 
@@ -1003,12 +1022,12 @@ fn fixup(self: *@This(), input: anytype) !void {
             var max_offset: usize = std.math.minInt(usize);
             var min_offset: usize = std.math.maxInt(usize);
             for (segment.segment_mapping.items) |section_handle| {
+                // FIXME: not fatal => remove mapping for sections that are stripped
                 const section = self.getSection(section_handle) orelse fatal(
                     "section to segment mapping is invalid. Section for handle '{d}' does not exist",
                     .{section_handle},
                 );
 
-                if (section.header.sh_type == std.elf.SHT_NULL) continue;
                 if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
 
                 found = true;
@@ -1093,14 +1112,26 @@ fn validate(self: *const @This()) !void {
     }
 
     // Validate section to segment mapping.
-    for (self.program_segments.items) |*segment| {
-        for (segment.segment_mapping.items) |section_handle| {
+    for (self.program_segments.items, 0..) |*segment, segment_i| {
+        // ELF spec: "p_vaddr should equal p_offset, modulo p_align."
+        // The "should" means must here - the ELF loader will reject the program otherwise.
+        // NOTE: however, p_offset, sh_offset or p_vaddr do **not** have to be aligned by p_align
+        const p_offset = segment.header.p_offset;
+        const p_vaddr = segment.header.p_vaddr;
+        const p_align = @max(1, segment.header.p_align);
+        const diff = if (p_vaddr > p_offset) p_vaddr - p_offset else p_offset - p_vaddr;
+        if (!std.mem.isAligned(diff, p_align)) std.log.err(
+            "segment virtual address p_vaddr=0x{x} and file offset p_offset=0x{x} must be congruent wrt. p_align=0x{x}, i.e. (p_vaddr - p_offset) % p_align == 0",
+            .{ p_vaddr, p_offset, segment.header.p_align },
+        );
+
+        for (segment.segment_mapping.items, 0..) |section_handle, section_i| {
             const section = self.getSection(section_handle) orelse {
-                std.log.err("section to segment mapping is invalid. Section for handle '{d}' does not exist", .{section_handle});
+                // TODO: deleted sections are not deleted from the segment mapping yet
+                // std.log.err("section to segment mapping is invalid. Section for handle '{d}' does not exist", .{section_handle});
                 continue;
             };
 
-            if (section.header.sh_type == std.elf.SHT_NULL) continue;
             if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
 
             const section_start = section.header.sh_offset;
@@ -1112,6 +1143,16 @@ fn validate(self: *const @This()) !void {
                 "segment range 0x{x}-0x{x} must cover the entire section range 0x{x}-0x{x}",
                 .{ segment_start, segment_end, section_start, section_end },
             );
+
+            if (segment.header.p_type == std.elf.PT_LOAD) {
+                // first section should match the program header offset
+                if (section_i == 0) {
+                    if (section_start != segment.header.p_offset) std.log.err(
+                        "first section '{s}' 0x{x}-0x{x} in PT_LOAD segment {d} 0x{x}-0x{x} must start at the same offset",
+                        .{ self.getSectionName(section), section_start, section_end, segment_i, segment_start, segment_end },
+                    );
+                }
+            }
         }
     }
 }

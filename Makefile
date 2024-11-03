@@ -23,7 +23,7 @@ all:
 
 .PHONY: release
 release:
-	zig build -Doptimize=ReleaseFast
+	zig build -Doptimize=ReleaseFast --prefix zig-out-release
 
 .PHONY: watch
 watch:

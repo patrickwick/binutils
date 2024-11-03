@@ -8,7 +8,7 @@ All features are available within the `build.zig` build system and using the com
 
 ## build.zig Usage
 
-Strip and executable:
+Strip executable:
 
 ```zig
 const exe = b.addExecutable(.{
@@ -140,10 +140,11 @@ General Options:
 
 ## Limitations
 
-* `zig objcopy --extract-to <file>` is not supported. I don't think it's a good option
+* `zig objcopy --extract-to <file>` is not supported. Justification:
     * it's neither a GNU nor LLVM binutil option
     * can easily achieved by combining --add-gnu-debuglink and --only-keep-debug
         * e.g., see the `extract_to_separate_file` helper for `build.zig`
+        * adding this option complicates the code too much since it's adding hard to test combinations between options
 * ELF to ELF copying only
     * Mach-O maybe at some point
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole

@@ -200,15 +200,23 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 } else false;
                 if (is_mapped) continue;
 
-                // TODO: keep .comment section
+                const name = elf.getSectionName(section);
+
+                // keep .comment and debug link sections
+                // NOTE: please let me know if there is a more general rule for this.
                 switch (section.header.sh_type) {
+                    std.elf.SHT_PROGBITS => {
+                        if (std.mem.eql(u8, name, ".comment")) continue;
+                        if (std.mem.eql(u8, name, ".gnu_debuglink")) continue;
+                        if (std.mem.eql(u8, name, ".gnu_debugaltlink")) continue;
+                        if (std.mem.eql(u8, name, ".debug_sup")) continue;
+                    },
                     else => {},
                 }
 
                 // TODO: check if any kept section links to this section transitively
                 // => sh_link, sh_info
 
-                const name = elf.getSectionName(section);
                 std.log.debug("stripping section '{s}'", .{name});
                 elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
                 break; // restart iteration after modification

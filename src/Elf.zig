@@ -1219,7 +1219,7 @@ test "read - endianness conversion" {
 test "read - 32bit ELF file" {
     const allocator = t.allocator;
 
-    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(false, .big);
+    var in_buffer align(SECTION_ALIGN) = try createTestElfBuffer(false, .little);
     var in_buffer_stream = std.io.FixedBufferStream(Section.Data){ .buffer = &in_buffer, .pos = 0 };
     var elf = try read(allocator, &in_buffer_stream);
     defer elf.deinit();

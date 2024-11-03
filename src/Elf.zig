@@ -809,6 +809,7 @@ pub fn compact(self: *@This()) !void {
 
     // Only whole segments are moved. All relative section offsets within a segment remain the same.
     var offset: usize = self.e_ehsize;
+    var segment_offset: isize = 0; // offset of current segment being moved
     for (regions.items) |*region| {
         defer offset = region.offset.* + region.*.size;
 
@@ -818,17 +819,30 @@ pub fn compact(self: *@This()) !void {
                 // ELF loaders will reject the program otherwise, so "should" means must here.
                 // This requirement helps with mapping sections into memory without adding 0 padding in the file.
                 // segment.header.p_offset = std.mem.align(offset
-                //
-                // TODO: first section can be moved up to move the entire segment
-                // * find lowest available space
-                // * calculate next boundary that fullfills (vaddr - offset) % align == 0
-                // * relocate and store the offset to move all sections within the segment by the same amount
                 std.debug.assert(region.offset.* == segment.header.p_offset);
-                std.log.debug("compact: first section of segment stays at 0x{x}. Lowest available space is 0x{x}", .{ region.offset.*, offset });
+
+                // FIXME: this is not sufficient, e.g.: see readelf ls -l:
+                // Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+                // LOAD           0x020f30 0x0000000000021f30 0x0000000000021f30 0x001348 0x0025e8 RW  0x1000
+                // => VirtAddr - Offset has to be aligned, not Offset itself as done here
+                const candidate = std.mem.alignForward(usize, offset, segment.header.p_align);
+
+                std.log.debug(
+                    "compact: first section of segment stays at 0x{x}. Lowest available space is 0x{x}. Candidate: 0x{x}",
+                    .{ region.offset.*, offset, candidate },
+                );
+
+                const check = @mod((@as(isize, @intCast(segment.header.p_vaddr)) - @as(isize, @intCast(candidate))), @as(isize, @intCast(segment.header.p_align))) == 0;
+                if (!check) fatal("candidate not aligned correctly", .{});
+
+                segment_offset = @as(isize, @intCast(region.offset.*)) - @as(isize, @intCast(candidate));
+                region.offset.* = candidate;
+                segment.header.p_offset = candidate;
             } else {
-                // TODO: move all sections inside a segment with the constant offset of the first section to preserve
-                // all relative addresses in the entire segment
-                std.log.debug("compact: section within segment stays at 0x{x}", .{region.offset.*});
+                // move all sections in a segment with the same offset to preserve all relative addresses in the segment
+                const current = region.offset.*;
+                region.offset.* = @intCast(@as(isize, @intCast(region.offset.*)) - segment_offset);
+                std.log.debug("compact: move section within segment from 0x{x} to 0x{x}", .{ current, region.offset.* });
             }
         } else {
             const new_offset = std.mem.alignForward(usize, offset, region.alignment);

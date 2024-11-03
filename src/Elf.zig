@@ -752,28 +752,50 @@ pub fn compact(self: *@This()) !void {
         offset: *usize,
         size: usize,
         alignment: usize,
+        first_section: bool,
+        segment: ?*ProgramSegment,
     };
 
     var regions = try std.ArrayList(Region).initCapacity(self.allocator, self.sections.items.len + 2);
     defer regions.deinit();
 
-    // Skip null section.
-    for (self.sections.items[1..]) |*section| regions.appendAssumeCapacity(.{
-        .offset = &section.header.sh_offset,
-        .size = section.header.sh_size,
-        .alignment = SECTION_ALIGN,
-    });
+    // Skip null section and NOBITS.
+    for (self.sections.items[1..]) |*section| {
+        if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
+
+        var first_section = false;
+        const segment = blk: for (self.program_segments.items) |*segment| {
+            for (segment.segment_mapping.items, 0..) |handle, i| {
+                if (section.handle == handle) {
+                    first_section = (i == 0);
+                    break :blk segment;
+                }
+            }
+        } else null;
+
+        regions.appendAssumeCapacity(.{
+            .offset = &section.header.sh_offset,
+            .size = section.header.sh_size,
+            .alignment = SECTION_ALIGN,
+            .first_section = first_section,
+            .segment = segment,
+        });
+    }
 
     regions.appendAssumeCapacity(.{
         .offset = &self.e_shoff,
         .size = self.e_shnum * self.e_shentsize,
         .alignment = SECTION_HEADER_ALIGN,
+        .first_section = false,
+        .segment = null,
     });
 
     regions.appendAssumeCapacity(.{
         .offset = &self.e_phoff,
         .size = self.e_phnum * self.e_phentsize,
         .alignment = PROGRAM_HEADER_ALIGN,
+        .first_section = false,
+        .segment = null,
     });
 
     const Sort = struct {
@@ -785,61 +807,35 @@ pub fn compact(self: *@This()) !void {
     var sort_context = Sort{};
     std.mem.sort(Region, regions.items, &sort_context, Sort.lessThan);
 
-    // TODO: will fail due to incomplete alignment
-    // zig build run -- objcopy ./reproduction/ls ./reproduction/ls_sz --strip-all && llvm-readelf ./reproduction/ls_sz -Sl  &&  eu-elflint ./reproduction/ls_sz --strict && ./reproduction/ls_sz
-    if (true) {
-        if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
-        return; // FIXME: reenable - compacting and updating program header offsets causes a segfault
-    }
-
+    // Only whole segments are moved. All relative section offsets within a segment remain the same.
     var offset: usize = self.e_ehsize;
     for (regions.items) |*region| {
-        // NOTE: file offset must:
-        // * be aligned with the section / header region alignment.
-        // * adhere to ELF spec: "p_vaddr should equal p_offset, modulo p_align.".
-        //   (p_vaddr - p_offset) & (align - 1) == 0
-        //   ELF loaders will reject the program otherwise, so "should" means must here.
-        //   This requirement helps with mapping sections into memory without adding 0 padding in the file.
-        const alignment = blk: {
-            // TODO: second constraint
-            break :blk region.alignment;
-        };
+        defer offset = region.offset.* + region.*.size;
 
-        region.offset.* = std.mem.alignForward(usize, offset, alignment);
-        offset = region.offset.* + region.*.size;
-    }
-
-    // Update program header section to segment mapping.
-    // NOTE: segments mapping a contiguous region over multiple sections remain valid since section order is unchanged.
-    for (self.program_segments.items) |*segment| {
-        if (segment.segment_mapping.items.len < 1) continue;
-
-        var found = false;
-        var max_offset: usize = std.math.minInt(usize);
-        var min_offset: usize = std.math.maxInt(usize);
-        for (segment.segment_mapping.items) |section_handle| {
-            const section = self.getSection(section_handle) orelse fatal(
-                "section to segment mapping is invalid. Section for handle '{d}' does not exist",
-                .{section_handle},
-            );
-
-            if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
-
-            found = true;
-            min_offset = @min(min_offset, section.header.sh_offset);
-            max_offset = @max(max_offset, section.header.sh_offset + section.header.sh_size);
-        }
-
-        if (found) {
-            // max_offset is allowed to be 0
-            std.debug.assert(min_offset < std.math.maxInt(usize));
-
-            const new_file_size = max_offset - min_offset;
-            const size_diff = @as(isize, @intCast(new_file_size)) - @as(isize, @intCast(segment.header.p_filesz));
-            segment.header.p_offset = min_offset;
-            segment.header.p_filesz = new_file_size;
-            // NOTE: mem size can be smaller than file size, e.g. for .bss sections that are not stored in the file
-            segment.header.p_memsz = @intCast(@as(isize, @intCast(segment.header.p_memsz)) + size_diff);
+        if (region.segment) |segment| {
+            if (region.first_section) {
+                // NOTE: must adhere to ELF spec: "p_vaddr should equal p_offset, modulo p_align.", i.e.: (p_vaddr - p_offset) & (align - 1) == 0
+                // ELF loaders will reject the program otherwise, so "should" means must here.
+                // This requirement helps with mapping sections into memory without adding 0 padding in the file.
+                // segment.header.p_offset = std.mem.align(offset
+                //
+                // TODO: first section can be moved up to move the entire segment
+                // * find lowest available space
+                // * calculate next boundary that fullfills (vaddr - offset) % align == 0
+                // * relocate and store the offset to move all sections within the segment by the same amount
+                std.debug.assert(region.offset.* == segment.header.p_offset);
+                std.log.debug("compact: first section of segment stays at 0x{x}. Lowest available space is 0x{x}", .{ region.offset.*, offset });
+            } else {
+                // TODO: move all sections inside a segment with the constant offset of the first section to preserve
+                // all relative addresses in the entire segment
+                std.log.debug("compact: section within segment stays at 0x{x}", .{region.offset.*});
+            }
+        } else {
+            const new_offset = std.mem.alignForward(usize, offset, region.alignment);
+            if (new_offset != region.offset.*) {
+                std.log.debug("compact: move unmapped region from 0x{x} to 0x{x}", .{ region.offset.*, new_offset });
+            }
+            region.offset.* = new_offset;
         }
     }
 
@@ -1011,38 +1007,6 @@ fn fixup(self: *@This(), input: anytype) !void {
                 }
             },
         };
-    }
-
-    // Update program headers.
-    if (false) { // FIXME: reenable
-        for (self.program_segments.items) |*segment| {
-            if (segment.segment_mapping.items.len < 1) continue;
-
-            var found = false;
-            var max_offset: usize = std.math.minInt(usize);
-            var min_offset: usize = std.math.maxInt(usize);
-            for (segment.segment_mapping.items) |section_handle| {
-                // FIXME: not fatal => remove mapping for sections that are stripped
-                const section = self.getSection(section_handle) orelse fatal(
-                    "section to segment mapping is invalid. Section for handle '{d}' does not exist",
-                    .{section_handle},
-                );
-
-                if (section.header.sh_type == std.elf.SHT_NOBITS) continue;
-
-                found = true;
-                min_offset = @min(min_offset, section.header.sh_offset);
-                max_offset = @max(max_offset, section.header.sh_offset + section.header.sh_size);
-            }
-
-            if (found) {
-                std.debug.assert(min_offset < std.math.maxInt(usize));
-                std.debug.assert(max_offset > std.math.minInt(usize));
-
-                segment.header.p_offset = min_offset;
-                segment.header.p_filesz = max_offset - min_offset;
-            }
-        }
     }
 
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();

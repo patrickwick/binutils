@@ -188,7 +188,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 // TODO: check if any kept section links to this section transitively
                 // => sh_link, sh_info
 
-                std.log.debug("Stripping debug section '{s}'", .{name});
+                std.log.debug("stripping debug section '{s}'", .{name});
                 elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
                 break; // restart iteration after modification
             } else break;
@@ -221,7 +221,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 // => sh_link, sh_info
 
                 const name = elf.getSectionName(section);
-                std.log.debug("Stripping section '{s}'", .{name});
+                std.log.debug("stripping section '{s}'", .{name});
                 elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
                 break; // restart iteration after modification
             } else break;
@@ -252,7 +252,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 // TODO: check if any kept section links to this section transitively
                 // => sh_link, sh_info
 
-                std.log.debug("Stripping non-debug section '{s}'", .{name});
+                std.log.debug("stripping non-debug section '{s}'", .{name});
                 elf.removeSection(section.handle) catch |err| fatal("failed removing section '{s}': {s}", .{ name, @errorName(err) });
                 break; // restart iteration after modification
             } else break;

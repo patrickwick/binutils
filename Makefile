@@ -144,9 +144,9 @@ objcopy-strip-debug: ./reproduction/ls
 	# FIXME: st_shndx should already be updated in STT_SECTION symbols
 	# eu-elflint ./reproduction/binutils_strip_debug --strict
 	objcopy --strip-all ./reproduction/binutils ./reproduction/binutils_strip_debug_gnu --strip-all
-	@du -h ./reproduction/binutils
-	@du -h ./reproduction/binutils_strip_debug
-	@du -h ./reproduction/binutils_strip_debug_gnu
+	@du -b ./reproduction/binutils
+	@du -b ./reproduction/binutils_strip_debug
+	@du -b ./reproduction/binutils_strip_debug_gnu
 
 .PHONY: objcopy-only-keep-debug
 objcopy-only-keep-debug: ./reproduction/ls
@@ -156,8 +156,8 @@ objcopy-only-keep-debug: ./reproduction/ls
 	readelf ./reproduction/binutils_only_keep_debug -S
 	# TODO: update st_value
 	# eu-elflint ./reproduction/binutils_only_keep_debug --strict
-	@du -h ./reproduction/binutils
-	@du -h ./reproduction/binutils_only_keep_debug
+	@du -b ./reproduction/binutils
+	@du -b ./reproduction/binutils_only_keep_debug
 
 .PHONY: objcopy-strip-all
 objcopy-strip-all: ./zig-out/bin/binutils
@@ -168,9 +168,9 @@ objcopy-strip-all: ./zig-out/bin/binutils
 	# NOTE: elflint does not like how zig creates NOBITS sections => not related to objcopy
 	# eu-elflint ./reproduction/binutils_strip_all --strict
 	objcopy --strip-all ./reproduction/binutils ./reproduction/binutils_strip_all_gnu --strip-all
-	@du -h ./reproduction/binutils
-	@du -h ./reproduction/binutils_strip_all
-	@du -h ./reproduction/binutils_strip_all_gnu
+	@du -b ./reproduction/binutils
+	@du -b ./reproduction/binutils_strip_all
+	@du -b ./reproduction/binutils_strip_all_gnu
 
 .PHONY: objcopy-compress-debug
 objcopy-compress-debug: ./zig-out/test/test_base_x86_64
@@ -181,5 +181,5 @@ objcopy-compress-debug: ./zig-out/test/test_base_x86_64
 	# NOTE: elflint does not like how zig creates NOBITS sections => not related to objcopy
 	# eu-elflint ./reproduction/test_base_x86_64_compress_debug --strict
 	readelf ./reproduction/test_base_x86_64_compress_debug --debug-dump | head
-	@du -h ./reproduction/test_base_x86_64
-	@du -h ./reproduction/test_base_x86_64_compress_debug
+	@du -b ./reproduction/test_base_x86_64
+	@du -b ./reproduction/test_base_x86_64_compress_debug

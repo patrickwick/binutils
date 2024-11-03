@@ -5,6 +5,8 @@ const testing = @import("testing.zig");
 
 const FATAL_EXIT_CODE = 1;
 
+const DEBUG = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
+
 // The alignment within the file must at least be of the input file class.
 // See ELF spec 1.2 https://refspecs.linuxbase.org/elf/elf.pdf:
 // "All data structures that the object file format defines follow the "natural" size and alignment
@@ -415,10 +417,11 @@ pub fn removeSection(self: *@This(), handle: Section.Handle) !void {
     self.sections.items[index].deinit();
     _ = self.sections.orderedRemove(index);
 
-    // TODO: remove from segment mapping
-    // TODO: update shstrtab => remove name
-    // TODO: update sh_name for removed name
-    // TODO: remove symtab .section entries
+    // TODO: remove handle from segment mapping then enable check in validate
+
+    // TODO: cleanup no longer needed name => not hurting for now to keep these
+    // * remove name from shstrtab and update all sh_name offsets accordingly
+    // * remove symtab .section / STT_SECTION entry
 
     if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
 }
@@ -815,29 +818,27 @@ pub fn compact(self: *@This()) !void {
 
         if (region.segment) |segment| {
             if (region.first_section) {
-                // NOTE: must adhere to ELF spec: "p_vaddr should equal p_offset, modulo p_align.", i.e.: (p_vaddr - p_offset) & (align - 1) == 0
-                // ELF loaders will reject the program otherwise, so "should" means must here.
-                // This requirement helps with mapping sections into memory without adding 0 padding in the file.
-                // segment.header.p_offset = std.mem.align(offset
-                std.debug.assert(region.offset.* == segment.header.p_offset);
-
-                // FIXME: this is not sufficient, e.g.: see readelf ls -l:
-                // Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
-                // LOAD           0x020f30 0x0000000000021f30 0x0000000000021f30 0x001348 0x0025e8 RW  0x1000
-                // => VirtAddr - Offset has to be aligned, not Offset itself as done here
-                const candidate = std.mem.alignForward(usize, offset, segment.header.p_align);
-
-                std.log.debug(
-                    "compact: first section of segment stays at 0x{x}. Lowest available space is 0x{x}. Candidate: 0x{x}",
-                    .{ region.offset.*, offset, candidate },
+                const new_offset = getSegmentAddress(
+                    segment.header.p_vaddr,
+                    segment.header.p_align,
+                    offset,
                 );
 
-                const check = @mod((@as(isize, @intCast(segment.header.p_vaddr)) - @as(isize, @intCast(candidate))), @as(isize, @intCast(segment.header.p_align))) == 0;
-                if (!check) fatal("candidate not aligned correctly", .{});
+                std.debug.assert(region.offset.* == segment.header.p_offset);
+                if (new_offset != region.offset.*) std.log.debug("compact: move segment from 0x{x} to 0x{x}", .{
+                    region.offset.*,
+                    new_offset,
+                });
 
-                segment_offset = @as(isize, @intCast(region.offset.*)) - @as(isize, @intCast(candidate));
-                region.offset.* = candidate;
-                segment.header.p_offset = candidate;
+                segment_offset = @as(isize, @intCast(region.offset.*)) - @as(isize, @intCast(new_offset));
+                region.offset.* = new_offset;
+                segment.header.p_offset = new_offset;
+
+                if (DEBUG and !checkSegmentConstraint(
+                    segment.header.p_offset,
+                    segment.header.p_vaddr,
+                    segment.header.p_align,
+                )) fatal("segment not aligned correctly after compacting", .{});
             } else {
                 // move all sections in a segment with the same offset to preserve all relative addresses in the segment
                 const current = region.offset.*;
@@ -853,7 +854,7 @@ pub fn compact(self: *@This()) !void {
         }
     }
 
-    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
+    if (DEBUG) try self.validate();
 }
 
 // Pre:
@@ -1023,7 +1024,7 @@ fn fixup(self: *@This(), input: anytype) !void {
         };
     }
 
-    if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) try self.validate();
+    if (DEBUG) try self.validate();
 }
 
 fn validate(self: *const @This()) !void {
@@ -1091,21 +1092,19 @@ fn validate(self: *const @This()) !void {
 
     // Validate section to segment mapping.
     for (self.program_segments.items, 0..) |*segment, segment_i| {
-        // ELF spec: "p_vaddr should equal p_offset, modulo p_align."
-        // The "should" means must here - the ELF loader will reject the program otherwise.
-        // NOTE: however, p_offset, sh_offset or p_vaddr do **not** have to be aligned by p_align
-        const p_offset = segment.header.p_offset;
-        const p_vaddr = segment.header.p_vaddr;
-        const p_align = @max(1, segment.header.p_align);
-        const diff = if (p_vaddr > p_offset) p_vaddr - p_offset else p_offset - p_vaddr;
-        if (!std.mem.isAligned(diff, p_align)) std.log.err(
-            "segment virtual address p_vaddr=0x{x} and file offset p_offset=0x{x} must be congruent wrt. p_align=0x{x}, i.e. (p_vaddr - p_offset) % p_align == 0",
-            .{ p_vaddr, p_offset, segment.header.p_align },
-        );
+        if (!checkSegmentConstraint(
+            segment.header.p_offset,
+            segment.header.p_vaddr,
+            segment.header.p_align,
+        )) std.log.err("segment virtual address p_vaddr=0x{x} and file offset p_offset=0x{x} must be congruent wrt. p_align=0x{x}, i.e. (p_vaddr - p_offset) % p_align == 0", .{
+            segment.header.p_vaddr,
+            segment.header.p_offset,
+            segment.header.p_align,
+        });
 
         for (segment.segment_mapping.items, 0..) |section_handle, section_i| {
             const section = self.getSection(section_handle) orelse {
-                // TODO: deleted sections are not deleted from the segment mapping yet
+                // TODO: deleted sections are not deleted from the segment mapping yet, see removeSection
                 // std.log.err("section to segment mapping is invalid. Section for handle '{d}' does not exist", .{section_handle});
                 continue;
             };
@@ -1135,6 +1134,23 @@ fn validate(self: *const @This()) !void {
     }
 }
 
+// Check if segment adheres to ELF spec: "p_vaddr should equal p_offset, modulo p_align.".
+fn checkSegmentConstraint(p_offset: anytype, p_vaddr: anytype, p_align: anytype) bool {
+    const alignment = @max(1, p_align);
+    const diff = if (p_vaddr > p_offset) p_vaddr - p_offset else p_offset - p_vaddr;
+    return std.mem.isAligned(diff, alignment);
+}
+
+// NOTE: must adhere to ELF spec: "p_vaddr should equal p_offset, modulo p_align.", i.e.: (p_vaddr - p_offset) & (align - 1) == 0
+// ELF loaders will reject the program otherwise, so "should" means must here.
+// This requirement helps with mapping sections into memory without adding 0 padding in the file.
+fn getSegmentAddress(p_vaddr: anytype, p_align: anytype, available_offset: anytype) usize {
+    const alignment = @max(1, p_align);
+    const remainder = @rem(p_vaddr, alignment);
+    if (available_offset < remainder) return remainder;
+    return std.mem.alignForward(usize, available_offset, alignment) + remainder;
+}
+
 fn getMaximumFileOffset(self: *const @This()) usize {
     var highest: usize = 0;
     for (self.sections.items) |*section| {
@@ -1155,11 +1171,19 @@ fn getMaximumFileOffset(self: *const @This()) usize {
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
     const context = "binutils";
     if (!builtin.is_test) std.log.err(context ++ ": " ++ format, args);
-    if (builtin.mode == .Debug) testing.printStackTrace(@returnAddress());
+    if (DEBUG) testing.printStackTrace(@returnAddress());
     std.process.exit(FATAL_EXIT_CODE);
 }
 
 const t = std.testing;
+
+test getSegmentAddress {
+    try t.expectEqual(0x1000, getSegmentAddress(0x1000, 0x1000, 16));
+    try t.expectEqual(0x1000, getSegmentAddress(0x8000, 0x1000, 16));
+    try t.expectEqual(0x1000, getSegmentAddress(0x9000, 0x1000, 16));
+    try t.expectEqual(0x0280, getSegmentAddress(0x3280, 0x1000, 16));
+    try t.expectEqual(0x0280, getSegmentAddress(0x2280, 0x1000, 16));
+}
 
 test read {
     const allocator = t.allocator;

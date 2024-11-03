@@ -2,7 +2,7 @@
 
 binutils implementation aiming to improve the current zig objcopy ELF to ELF copying implementation in terms of robustness and limitations.
 This implementation focusses on simple, robust and well tested code instead of providing a large feature set.
-It supports all features of the current zig objcopy implementation with a backward compatible interface and more.
+It supports all features of the current zig objcopy implementation except `--extract-to` with a backward compatible interface and more.
 
 All features are available within the `build.zig` build system and using the command line.
 
@@ -118,9 +118,6 @@ Options:
       Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
       The <file> path is relative to the in-file directory. Absolute paths are supported as well.
 
-  --extract-to <file>
-      Extract the removed sections into <file>, and add a .gnu-debuglink section.
-
   --compress-debug-sections
       Compress DWARF debug sections with zlib
 
@@ -143,6 +140,10 @@ General Options:
 
 ## Limitations
 
+* `zig objcopy --extract-to <file>` is not supported. I don't think it's a good option
+    * it's neither a GNU nor LLVM binutil option
+    * can easily achieved by combining --add-gnu-debuglink and --only-keep-debug
+        * e.g., see the `extract_to_separate_file` helper for `build.zig`
 * ELF to ELF copying only
     * Mach-O maybe at some point
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
@@ -154,15 +155,11 @@ General Options:
 
 Zig objcopy currently has strict limitations:
 
-* all input file sections must be ordered ascending by file offsets
+* most importantly, all input file sections must be ordered ascending by file offsets
     * does not work on ELF files created with zig itself
 * input file path cannot match output file path
 * target endianness must match native endianness
-* no section or program header can be relocated, meaning:
-    * shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)
-    * changing section alignment may corrupt headers that are not relocated by shifting sections contents into the header offset due to increased alignment
-    * sections cannot be resized
-    * sections cannot be reordered
+* shstrtab must be the last section, otherwise adding a new section name may corrupt the headers or section content (undected corruption?)
 * gnu_debuglink paths are relative to working directory but should be relative to modified binary
 * testing is difficult due to scattered use of the file system and nested code with scattered assumptions
 * -j / --only-section and --pad-to are not supported for ELF to ELF copying

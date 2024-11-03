@@ -16,7 +16,6 @@ pub const ObjCopyOptions = struct {
     strip_all: bool = false,
     only_keep_debug: bool = false,
     add_gnu_debuglink: ?AddGnuDebugLinkOption = null,
-    extract_to: ?ExtractToOption = null,
     compress_debug_sections: bool = false,
     set_section_alignment: ?SetSectionAlignmentOption = null,
     set_section_flags: ?SetSectionFlagsOption = null,
@@ -36,10 +35,6 @@ pub const PadToOption = struct {
 
 pub const AddGnuDebugLinkOption = struct {
     link: []const u8,
-};
-
-pub const ExtractToOption = struct {
-    target_path: []const u8,
 };
 
 pub const SetSectionFlagsOption = struct {
@@ -108,13 +103,6 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         .{ out_path, @errorName(err) },
     );
     defer out_file.close();
-
-    // --extract-to
-    // copy sections before modifications then write the removed sections at the end to the separate file
-    if (options.extract_to) |extract_to| {
-        _ = extract_to;
-        // TODO: NYI
-    }
 
     // -O, --output_target
     switch (options.output_target) {

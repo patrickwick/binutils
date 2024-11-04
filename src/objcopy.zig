@@ -386,6 +386,8 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 },
             }
         }
+
+        elf.compact() catch |err| fatal("failed compacting ELF file: {s}", .{@errorName(err)});
     }
 
     // --set-section-alignment

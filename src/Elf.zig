@@ -1337,7 +1337,22 @@ fn createTestElfBuffer(comptime is_64bit: bool, endian: std.builtin.Endian) ![25
 
     // write input ELF
     {
-        try in_buffer_writer.writeStructEndian(header, endian);
+        // NOTE: cannot use writeStructEndian due to safety checks in exhaustive enums
+        const FT = std.meta.FieldType;
+        try in_buffer_writer.writeAll(&header.e_ident);
+        try in_buffer_writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).@"enum".tag_type, @intFromEnum(header.e_type), endian);
+        try in_buffer_writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).@"enum".tag_type, @intFromEnum(header.e_machine), endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_version), header.e_version, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_entry), header.e_entry, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_phoff), header.e_phoff, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shoff), header.e_shoff, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_flags), header.e_flags, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_ehsize), header.e_ehsize, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_phentsize), header.e_phentsize, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_phnum), header.e_phnum, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shentsize), header.e_shentsize, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shnum), header.e_shnum, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shstrndx), header.e_shstrndx, endian);
 
         // section headers
         try t.expectEqual(section_header_table_offset, try in_buffer_stream.getPos());

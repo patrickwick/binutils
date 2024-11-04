@@ -1,7 +1,7 @@
 const std = @import("std");
 const binutils = @import("src/binutils.zig");
 
-const USE_LLVM = false;
+const USE_LLVM = true;
 
 pub fn build(b: *std.Build) void {
     const native_target = b.standardTargetOptions(.{});

@@ -181,5 +181,7 @@ objcopy-compress-debug: ./zig-out/test/test_base_x86_64
 	# NOTE: elflint does not like how zig creates NOBITS sections => not related to objcopy
 	# eu-elflint ./reproduction/test_base_x86_64_compress_debug --strict
 	readelf ./reproduction/test_base_x86_64_compress_debug --debug-dump | head
+	objcopy ./reproduction/test_base_x86_64 ./reproduction/test_base_x86_64_compress_debug_gnu --compress-debug-sections
 	@du -b ./reproduction/test_base_x86_64
 	@du -b ./reproduction/test_base_x86_64_compress_debug
+	@du -b ./reproduction/test_base_x86_64_compress_debug_gnu

@@ -66,6 +66,9 @@ pub fn build(b: *std.Build) void {
         };
 
         inline for (targets, target_names) |target, base_name| {
+            // NOTE: no riscv32 support in zig 0.13.0 yet
+            comptime if (@import("builtin").zig_version.minor < 14 and std.mem.eql(u8, base_name, "test_base_riscv32")) continue;
+
             const test_base_exe = b.addExecutable(.{
                 .name = base_name,
                 .root_source_file = .{ .cwd_relative = b.pathJoin(&.{ TEST_DIR, "/test_base.zig" }) },

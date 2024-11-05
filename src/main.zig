@@ -37,7 +37,6 @@ fn printUsage(out: std.io.AnyWriter) void {
         \\Commands:
         \\
         \\  readelf          Display information about ELF files
-        \\  objdump          Display information from object files
         \\  objcopy          Copy and translate object files
         \\
         \\General Options:
@@ -63,7 +62,7 @@ fn parseCommand(out: std.io.AnyWriter, args: []const []const u8) Command {
 
     const command = args[0];
     if (std.mem.eql(u8, command, "readelf")) return .{ .readelf = parseReadElf(out, args[1..]) };
-    if (std.mem.eql(u8, command, "objdump")) return .{ .objdump = parseObjDump(out, args[1..]) };
+    // if (std.mem.eql(u8, command, "objdump")) return .{ .objdump = parseObjDump(out, args[1..]) };
     if (std.mem.eql(u8, command, "objcopy")) return .{ .objcopy = parseObjCopy(out, args[1..]) };
     if (std.mem.eql(u8, command, "--help")) {
         printUsage(out);
@@ -172,6 +171,7 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
 
     var output_target: objcopy.OutputTarget = .elf;
     var only_section: ?objcopy.OnlySectionOption = null;
+    var remove_section: ?objcopy.RemoveSectionOption = null;
     var pad_to: ?objcopy.PadToOption = null;
     var strip_debug: bool = false;
     var strip_all: bool = false;
@@ -241,6 +241,17 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                     .{arg},
                 );
                 only_section = .{ .section_name = split.second };
+                continue;
+            }
+
+            // --only-section=<section>
+            if (std.mem.startsWith(u8, arg, "--remove-section")) {
+                const split = splitOption(arg) orelse fatalPrintUsageObjCopy(
+                    out,
+                    "unrecognized argument: '{s}', expecting --remove-section=<section>",
+                    .{arg},
+                );
+                remove_section = .{ .section_name = split.second };
                 continue;
             }
 
@@ -340,6 +351,12 @@ fn parseObjCopy(out: std.io.AnyWriter, args: []const []const u8) objcopy.ObjCopy
                             i += 1;
                             only_section = .{ .section_name = args[i] };
                         } else fatalPrintUsageObjCopy(out, "unrecognized -j argument, expecting -j <section>", .{});
+                    },
+                    'R' => {
+                        if (args.len > i + 1) {
+                            i += 1;
+                            remove_section = .{ .section_name = args[i] };
+                        } else fatalPrintUsageObjCopy(out, "unrecognized -R argument, expecting -R <section>", .{});
                     },
                     'g' => strip_debug = true,
                     'S' => strip_all = true,
@@ -444,26 +461,32 @@ const OBJCOPY_USAGE =
     \\     Input and output file paths. If you do not specify out-file or if is equivalent to in-file, a temporary file is used and the input file is only overwritten on success.
     \\
     \\  -j <section>, --only-section=<section>
-    \\      Remove all sections except <section> and the section name table section (.shstrtab).
+    \\      Remove all sections except <section> and the section name table section (.shstrtab). Compacts the ELF file after removal.
+    \\      NOTE: supports only a section name. Section patterns are not supported yet.
+    \\
+    \\  -R <section>, --remove-section=<section>
+    \\      Remove section <section>. Compacts the ELF file after removal.
+    \\      Does not allow the removal of the section name table section (.shstrtab) and first null section.
+    \\      NOTE: supports only a section name. Section patterns are not supported yet.
     \\
     \\  --pad-to <addr>
     \\      Pad the last section up to address <addr>. The address accepts decimal values, hex value with a "0x" prefix or binary values with a "0b" prefix.
     \\
     \\  -g, strip-debug
-    \\      Remove all debug sections from the output.
+    \\      Remove all debug sections from the output. Compacts the ELF file after removal.
     \\
     \\  -S, --strip-all
-    \\      Remove all debug sections and symbol table from the output.
+    \\      Remove all debug sections and symbol table from the output. Compacts the ELF file after removal.
     \\
     \\  --only-keep-debug
-    \\      Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact.
+    \\      Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact. Compacts the ELF file after removal.
     \\
     \\  --add-gnu-debuglink=<file>
     \\      Creates or overwrites the .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
     \\      The <file> path is relative to the in-file directory. Absolute paths are supported as well.
     \\
     \\  --compress-debug-sections
-    \\      Compress DWARF debug sections with zlib
+    \\      Compress DWARF debug sections with zlib. Compacts the ELF file after compression.
     \\
     \\  --set-section-alignment <name>=<align>
     \\      Set address alignment of section <name> to <align> bytes. Must be a power of two.
@@ -592,7 +615,7 @@ test parseCommand {
 
     const writer = std.io.null_writer.any();
     try t.expect(std.meta.activeTag(parseCommand(writer, &.{ "readelf", "./file" })) == .readelf);
-    try t.expect(std.meta.activeTag(parseCommand(writer, &.{ "objdump", "file_path" })) == .objdump);
+    // try t.expect(std.meta.activeTag(parseCommand(writer, &.{ "objdump", "file_path" })) == .objdump);
     try t.expect(std.meta.activeTag(parseCommand(writer, &.{ "objcopy", "/home/abc/input", "./output" })) == .objcopy);
 }
 

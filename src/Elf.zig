@@ -28,26 +28,26 @@ pub const Elf = @This();
 // Replacing std.elf.ET since it is non exhaustive which causes issues with endianness conversion
 // due to safety checks on swapped temporary values when using std.mem.byteSwapAllFields, etc.
 pub const Type = enum(u16) {
-    // 0x00 	ET_NONE     Unknown.
+    // 0x00    ET_NONE     Unknown.
     none = 0,
-    // 0x01 	ET_REL 	    Relocatable file.
+    // 0x01    ET_REL      Relocatable file.
     relocatable = 1,
-    // 0x02 	ET_EXEC     Executable file.
+    // 0x02    ET_EXEC     Executable file.
     executable = 2,
-    // 0x03 	ET_DYN 	    Shared object.
+    // 0x03    ET_DYN      Shared object.
     dynamic = 3,
-    // 0x04 	ET_CORE     Core file.
+    // 0x04    ET_CORE     Core file.
     core = 4,
     // Reserved range
     _,
 
-    // 0xFE00 	ET_LOOS     Reserved inclusive range. Operating system specific.
+    // 0xFE00  ET_LOOS     Reserved inclusive range. Operating system specific.
     pub const ET_LOOS = 0xfe00;
-    // 0xFEFF 	ET_HIOS
+    // 0xFEFF  ET_HIOS
     pub const ET_HIOS = 0xfeff;
-    // 0xFF00 	ET_LOPROC   Reserved inclusive range. Processor specific.
+    // 0xFF00  ET_LOPROC   Reserved inclusive range. Processor specific.
     pub const ET_LOPROC = 0xff00;
-    // 0xFFFF 	ET_HIPROC
+    // 0xFFFF  ET_HIPROC
     pub const ET_HIPROC = 0xffff;
 };
 
@@ -121,12 +121,67 @@ pub const EIdent = struct {
 
     pub const AbiVersion = u8;
 
+    pub const OsAbi = if (@import("builtin").zig_version.minor >= 14)
+        std.elf.OSABI
+    else
+        // Copy from zig 0.14.0-dev.2097+d30e28754 for zig 0.13.0 backward compatibility.
+        enum(u8) {
+            /// UNIX System V ABI
+            NONE = 0,
+            /// HP-UX operating system
+            HPUX = 1,
+            /// NetBSD
+            NETBSD = 2,
+            /// GNU (Hurd/Linux)
+            GNU = 3,
+            /// Solaris
+            SOLARIS = 6,
+            /// AIX
+            AIX = 7,
+            /// IRIX
+            IRIX = 8,
+            /// FreeBSD
+            FREEBSD = 9,
+            /// TRU64 UNIX
+            TRU64 = 10,
+            /// Novell Modesto
+            MODESTO = 11,
+            /// OpenBSD
+            OPENBSD = 12,
+            /// OpenVMS
+            OPENVMS = 13,
+            /// Hewlett-Packard Non-Stop Kernel
+            NSK = 14,
+            /// AROS
+            AROS = 15,
+            /// FenixOS
+            FENIXOS = 16,
+            /// Nuxi CloudABI
+            CLOUDABI = 17,
+            /// Stratus Technologies OpenVOS
+            OPENVOS = 18,
+            /// NVIDIA CUDA architecture
+            CUDA = 51,
+            /// AMD HSA Runtime
+            AMDGPU_HSA = 64,
+            /// AMD PAL Runtime
+            AMDGPU_PAL = 65,
+            /// AMD Mesa3D Runtime
+            AMDGPU_MESA3D = 66,
+            /// ARM
+            ARM = 97,
+            /// Standalone (embedded) application
+            STANDALONE = 255,
+
+            _,
+        };
+
     ei_class: Class,
     ei_data: std.builtin.Endian,
 
     // ELF specification version
     ei_version: Version,
-    ei_osabi: OSABI,
+    ei_osabi: OsAbi,
     ei_abiversion: AbiVersion,
 
     pub fn toBuffer(self: *const @This()) [std.elf.EI_NIDENT]u8 {
@@ -314,8 +369,8 @@ pub fn init(
     allocator: std.mem.Allocator,
     header: std.elf.Header,
     ei_version: Version,
-    ei_osabi: EIdent.OSABI,
-    ei_abiversion: EIdent.AbiVersion,
+    ei_osabi: EIdent.OsAbi,
+    ei_abi_version: EIdent.AbiVersion,
     e_type: Type,
     e_version: Version,
     sections: Sections,
@@ -330,7 +385,7 @@ pub fn init(
             .ei_data = header.endian,
             .ei_version = ei_version,
             .ei_osabi = ei_osabi,
-            .ei_abiversion = ei_abiversion,
+            .ei_abiversion = ei_abi_version,
         },
         .e_type = e_type,
         .e_machine = header.machine,
@@ -560,15 +615,18 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
 
                 // NOTE: cannot use writeStructEndian since @enumFromInt check fails due to non-exhaustive enums in std.elf
                 // try writer.writeStructEndian(header, output_endianness);
+                // => consider creating an with minimal reproduction. Using @setRuntimeSafety(false) does not work here either
 
                 @setEvalBranchQuota(2000);
                 const FT = std.meta.FieldType;
                 try writer.writeAll(&header.e_ident);
-                // NOTE: Zig v0.14.x
-                // try writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).@"enum".tag_type, @intFromEnum(header.e_type), endian);
-                // try writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).@"enum".tag_type, @intFromEnum(header.e_machine), endian);
-                try writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).Enum.tag_type, @intFromEnum(header.e_type), endian);
-                try writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).Enum.tag_type, @intFromEnum(header.e_machine), endian);
+                if (@import("builtin").zig_version.minor >= 14) {
+                    try writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).@"enum".tag_type, @intFromEnum(header.e_type), endian);
+                    try writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).@"enum".tag_type, @intFromEnum(header.e_machine), endian);
+                } else {
+                    try writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).Enum.tag_type, @intFromEnum(header.e_type), endian);
+                    try writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).Enum.tag_type, @intFromEnum(header.e_machine), endian);
+                }
                 try writer.writeInt(FT(ElfHeader, .e_version), header.e_version, endian);
                 try writer.writeInt(FT(ElfHeader, .e_entry), header.e_entry, endian);
                 try writer.writeInt(FT(ElfHeader, .e_phoff), header.e_phoff, endian);
@@ -656,13 +714,16 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
     const ei_version = std.meta.intToEnum(Version, e_ident[std.elf.EI_VERSION]) catch return error.UnrecognizedElfVersion;
     const e_version = .ev_current;
 
-    const ei_osabi = try std.meta.intToEnum(EIdent.OSABI, e_ident[EIdent.EI_OSABI]);
-    const ei_abiversion: EIdent.AbiVersion = e_ident[EIdent.EI_ABIVERSION];
+    const EI_OSABI = 7;
+    const ei_osabi = try std.meta.intToEnum(EIdent.OsAbi, e_ident[EI_OSABI]);
+
+    const EI_ABIVERSION = 8;
+    const ei_abiversion: EIdent.AbiVersion = e_ident[EI_ABIVERSION];
 
     const header = try std.elf.Header.read(source);
 
-    const E_TYPE_OFFSET = 0x10;
-    try source.seekableStream().seekTo(E_TYPE_OFFSET);
+    const E_TYPE = 16;
+    try source.seekableStream().seekTo(E_TYPE);
     const e_type_raw = try source.reader().readInt(u16, header.endian);
     const e_type = try std.meta.intToEnum(Type, e_type_raw);
 
@@ -788,7 +849,7 @@ pub fn read(allocator: std.mem.Allocator, source: anytype) !@This() {
         });
     }
 
-    const elf = try @This().init(
+    const elf = try init(
         allocator,
         header,
         ei_version,
@@ -1415,9 +1476,7 @@ fn createTestElfBuffer(comptime is_64bit: bool, endian: std.builtin.Endian) ![25
     ++ [_]u8{class} // EI_CLASS
     ++ [_]u8{data} // EI_DATA
     ++ [_]u8{@intFromEnum(Version.ev_current)} // EI_VERSION
-    // NOTE: Zig v0.14.x
-    // ++ [_]u8{@intFromEnum(std.elf.OSABI.GNU)} // EI_OSABI
-    ++ [_]u8{@intFromEnum(EIdent.OSABI.GNU)} // EI_OSABI
+    ++ [_]u8{@intFromEnum(EIdent.OsAbi.GNU)} // EI_OSABI
     ++ [_]u8{0} // EI_ABIVERSION
     ++ [_]u8{0} ** 7; // EI_PAD
 
@@ -1445,7 +1504,27 @@ fn createTestElfBuffer(comptime is_64bit: bool, endian: std.builtin.Endian) ![25
 
     // write input ELF
     {
-        try in_buffer_writer.writeStructEndian(header, endian);
+        // NOTE: cannot use writeStructEndian due to safety checks in exhaustive enums
+        const FT = std.meta.FieldType;
+        try in_buffer_writer.writeAll(&header.e_ident);
+        if (@import("builtin").zig_version.minor >= 14) {
+            try in_buffer_writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).@"enum".tag_type, @intFromEnum(header.e_type), endian);
+            try in_buffer_writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).@"enum".tag_type, @intFromEnum(header.e_machine), endian);
+        } else {
+            try in_buffer_writer.writeInt(@typeInfo(FT(ElfHeader, .e_type)).Enum.tag_type, @intFromEnum(header.e_type), endian);
+            try in_buffer_writer.writeInt(@typeInfo(FT(ElfHeader, .e_machine)).Enum.tag_type, @intFromEnum(header.e_machine), endian);
+        }
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_version), header.e_version, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_entry), header.e_entry, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_phoff), header.e_phoff, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shoff), header.e_shoff, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_flags), header.e_flags, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_ehsize), header.e_ehsize, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_phentsize), header.e_phentsize, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_phnum), header.e_phnum, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shentsize), header.e_shentsize, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shnum), header.e_shnum, endian);
+        try in_buffer_writer.writeInt(FT(ElfHeader, .e_shstrndx), header.e_shstrndx, endian);
 
         // section headers
         try t.expectEqual(section_header_table_offset, try in_buffer_stream.getPos());

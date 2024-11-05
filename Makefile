@@ -1,5 +1,12 @@
 # Convenience targets for temporary tests that are not meant to be part of build.zig
 all:
+	${MAKE} activate_master
+	${MAKE} all_tests
+	${MAKE} activate_v13
+	${MAKE} all_tests
+
+.PHONY: all_tests
+all_tests:
 	${MAKE} test
 	${MAKE} test_integration
 	${MAKE} build
@@ -10,6 +17,7 @@ all:
 	${MAKE} objcopy-single-argument
 	${MAKE} objcopy-add-section
 	${MAKE} objcopy-only-section
+	${MAKE} objcopy-remove-section
 	${MAKE} objcopy-pad-to-small
 	${MAKE} objcopy-pad-to
 	${MAKE} objcopy-set-section-flags
@@ -20,6 +28,14 @@ all:
 	${MAKE} objcopy-strip-all
 	${MAKE} objcopy-compress-debug
 	${MAKE} release
+
+.PHONY: activate_master
+activate_master:
+	zigup default master
+
+.PHONY: activate_v13
+activate_v13:
+	zigup default 0.13.0
 
 .PHONY: release
 release:
@@ -85,6 +101,12 @@ objcopy-only-section: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text --only-section=.text
 	zig build run -- readelf ./reproduction/ls_objcopy_only_section_text -hSl
 	# eu-elflint ./reproduction/ls_objcopy_only_section_text --strict
+
+.PHONY: objcopy-remove-section
+objcopy-remove-section: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_remove_section --remove-section=.eh_frame
+	zig build run -- readelf ./reproduction/ls_objcopy_remove_section -hSl
+	eu-elflint ./reproduction/ls_objcopy_remove_section --strict
 
 .PHONY: objcopy-pad-to-small
 objcopy-pad-to-small: ./reproduction/ls
@@ -181,5 +203,7 @@ objcopy-compress-debug: ./zig-out/test/test_base_x86_64
 	# NOTE: elflint does not like how zig creates NOBITS sections => not related to objcopy
 	# eu-elflint ./reproduction/test_base_x86_64_compress_debug --strict
 	readelf ./reproduction/test_base_x86_64_compress_debug --debug-dump | head
+	objcopy ./reproduction/test_base_x86_64 ./reproduction/test_base_x86_64_compress_debug_gnu --compress-debug-sections
 	@du -b ./reproduction/test_base_x86_64
 	@du -b ./reproduction/test_base_x86_64_compress_debug
+	@du -b ./reproduction/test_base_x86_64_compress_debug_gnu

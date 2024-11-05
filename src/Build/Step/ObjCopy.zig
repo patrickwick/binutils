@@ -45,7 +45,7 @@ pub fn create(owner: *std.Build, input_file: std.Build.LazyPath, options: Option
             .id = base_id,
             .name = owner.fmt("objcopy {s}", .{input_file.getDisplayName()}),
             .owner = owner,
-            .makeFn = make,
+            .makeFn = selectMakeFunction(),
         }),
         .input_file = input_file,
         .output_file = std.Build.GeneratedFile{ .step = &target.step },
@@ -64,15 +64,21 @@ pub fn getOutputSeparatedDebug(self: *const @This()) ?std.Build.LazyPath {
     return if (self.output_debug_file) |*file| .{ .generated = .{ .file = file } } else null;
 }
 
-// NOTE: zig v0.14.x
-// fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
-//  _ = options;
-fn make(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
+// Select make function for v0.13.0 backward compatibility.
+fn selectMakeFunction() std.Build.Step.MakeFn {
+    return comptime if (@import("builtin").zig_version.minor >= 14) make_v14 else make_v13;
+}
+
+fn make_v14(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
+    return try make_v13(step, options.progress_node);
+}
+
+fn make_v13(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
     _ = prog_node;
 
     const b = step.owner;
     const target: *ObjCopy = @fieldParentPtr("step", step);
-    // try step.singleUnchangingWatchInput(target.input_file); // NOTE: zig 0.14.x
+    if (@import("builtin").zig_version.minor >= 14) try step.singleUnchangingWatchInput(target.input_file);
 
     var manifest = b.graph.cache.obtain();
     defer manifest.deinit();

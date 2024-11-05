@@ -1,9 +1,8 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const binutils = @import("src/binutils.zig");
 
-// Zig backend works reliably with Zig v0.14.x but not with Zig v0.13.0
-const USE_LLVM = builtin.zig_version.minor < 14;
+// The zig backend works very reliably with the zig v0.14.x master here but not yet with Zig v0.13.0.
+const USE_LLVM = true;
 
 pub fn build(b: *std.Build) void {
     const native_target = b.standardTargetOptions(.{});
@@ -68,6 +67,9 @@ pub fn build(b: *std.Build) void {
         };
 
         inline for (targets, target_names) |target, base_name| {
+            // NOTE: no riscv32 support in zig 0.13.0 yet
+            comptime if (@import("builtin").zig_version.minor < 14 and std.mem.eql(u8, base_name, "test_base_riscv32")) continue;
+
             const test_base_exe = b.addExecutable(.{
                 .name = base_name,
                 .root_source_file = .{ .cwd_relative = b.pathJoin(&.{ TEST_DIR, "/test_base.zig" }) },

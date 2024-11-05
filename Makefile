@@ -1,5 +1,12 @@
 # Convenience targets for temporary tests that are not meant to be part of build.zig
 all:
+	${MAKE} activate_master
+	${MAKE} all_tests
+	${MAKE} activate_v13
+	${MAKE} all_tests
+
+.PHONY: all_tests
+all_tests:
 	${MAKE} test
 	${MAKE} test_integration
 	${MAKE} build
@@ -21,6 +28,14 @@ all:
 	${MAKE} objcopy-strip-all
 	${MAKE} objcopy-compress-debug
 	${MAKE} release
+
+.PHONY: activate_master
+activate_master:
+	zigup default master
+
+.PHONY: activate_v13
+activate_v13:
+	zigup default 0.13.0
 
 .PHONY: release
 release:

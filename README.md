@@ -6,6 +6,8 @@ It supports all features of the current zig objcopy implementation except `--ext
 
 All features are available within the `build.zig` build system and using the command line.
 
+It's tested with zig 0.13.0 and current zig master.
+
 ## build.zig Usage
 
 Strip executable:

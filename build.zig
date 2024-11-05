@@ -56,13 +56,13 @@ pub fn build(b: *std.Build) void {
 
         const targets = [_]std.Build.ResolvedTarget{
             native_target, // native
-            // b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // test 32bit
+            b.resolveTargetQuery(.{ .cpu_arch = .riscv32 }), // test 32bit
             b.resolveTargetQuery(.{ .cpu_arch = .aarch64_be }), // test big endian arch
         };
 
         const target_names = &.{
             "test_base_x86_64",
-            // "test_base_riscv32",
+            "test_base_riscv32",
             "test_base_aarch64_big_endian",
         };
 

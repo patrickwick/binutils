@@ -10,6 +10,7 @@ all:
 	${MAKE} objcopy-single-argument
 	${MAKE} objcopy-add-section
 	${MAKE} objcopy-only-section
+	${MAKE} objcopy-remove-section
 	${MAKE} objcopy-pad-to-small
 	${MAKE} objcopy-pad-to
 	${MAKE} objcopy-set-section-flags
@@ -85,6 +86,12 @@ objcopy-only-section: ./reproduction/ls
 	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_only_section_text --only-section=.text
 	zig build run -- readelf ./reproduction/ls_objcopy_only_section_text -hSl
 	# eu-elflint ./reproduction/ls_objcopy_only_section_text --strict
+
+.PHONY: objcopy-remove-section
+objcopy-remove-section: ./reproduction/ls
+	zig build run -- objcopy ./reproduction/ls ./reproduction/ls_objcopy_remove_section --remove-section=.eh_frame
+	zig build run -- readelf ./reproduction/ls_objcopy_remove_section -hSl
+	eu-elflint ./reproduction/ls_objcopy_remove_section --strict
 
 .PHONY: objcopy-pad-to-small
 objcopy-pad-to-small: ./reproduction/ls

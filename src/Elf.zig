@@ -475,6 +475,7 @@ pub fn write(self: *@This(), source: anytype, target: anytype) !void {
 
                 // NOTE: cannot use writeStructEndian since @enumFromInt check fails due to non-exhaustive enums in std.elf
                 // try writer.writeStructEndian(header, output_endianness);
+                // => consider creating an with minimal reproduction. Using @setRuntimeSafety(false) does not work here either
 
                 @setEvalBranchQuota(2000);
                 const FT = std.meta.FieldType;

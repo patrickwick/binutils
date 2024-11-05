@@ -100,26 +100,32 @@ Options:
       Input and output file paths. If you do not specify out-file or if is equivalent to in-file, a temporary file is used and the input file is only overwritten on success.
 
   -j <section>, --only-section=<section>
-      Remove all sections except <section> and the section name table section (.shstrtab).
+      Remove all sections except <section> and the section name table section (.shstrtab). Compacts the ELF file after removal.
+      NOTE: supports only a section name. Section patterns are not supported yet.
+
+  -R <section>, --remove-section=<section>
+      Remove section <section>. Compacts the ELF file after removal.
+      Does not allow the removal of the section name table section (.shstrtab) and first null section.
+      NOTE: supports only a section name. Section patterns are not supported yet.
 
   --pad-to <addr>
       Pad the last section up to address <addr>. The address accepts decimal values, hex value with a "0x" prefix or binary values with a "0b" prefix.
 
   -g, strip-debug
-      Remove all debug sections from the output.
+      Remove all debug sections from the output. Compacts the ELF file after removal.
 
   -S, --strip-all
       Remove all debug sections and symbol table from the output.
 
   --only-keep-debug
-      Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact.
+      Strip a file, removing contents of any sections that would not be stripped by --strip-debug and leaving the debugging sections intact. Compacts the ELF file after removal.
 
   --add-gnu-debuglink=<file>
       Creates a .gnu_debuglink section which contains a reference to <file> and adds it to the output file.
       The <file> path is relative to the in-file directory. Absolute paths are supported as well.
 
   --compress-debug-sections
-      Compress DWARF debug sections with zlib
+      Compress DWARF debug sections with zlib. Compacts the ELF file after compression.
 
   --set-section-alignment <name>=<align>
       Set address alignment of section <name> to <align> bytes. Must be a power of two.

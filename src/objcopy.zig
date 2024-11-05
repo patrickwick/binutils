@@ -11,6 +11,7 @@ pub const ObjCopyOptions = struct {
     out_file_path: []const u8,
     output_target: OutputTarget = .elf,
     only_section: ?OnlySectionOption = null,
+    remove_section: ?RemoveSectionOption = null,
     pad_to: ?PadToOption = null,
     strip_debug: bool = false,
     strip_all: bool = false,
@@ -73,6 +74,10 @@ pub const OnlySectionOption = struct {
     section_name: []const u8,
 };
 
+pub const RemoveSectionOption = struct {
+    section_name: []const u8,
+};
+
 pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
     const out = std.io.getStdOut();
     _ = out;
@@ -109,7 +114,7 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
         .elf => {},
     }
 
-    // --only-section
+    // -j, --only-section
     if (options.only_section) |only_section| {
         // double loop since iteration needs to be restarted on modified array
         while (true) {
@@ -128,6 +133,30 @@ pub fn objcopy(allocator: std.mem.Allocator, options: ObjCopyOptions) void {
                 break; // restart iteration => items are invalidated
             } else break;
         }
+
+        elf.compact() catch |err| fatal("failed compacting ELF file: {s}", .{@errorName(err)});
+    }
+
+    // -R --remove-section
+    if (options.remove_section) |remove_section| {
+        if (std.mem.eql(u8, remove_section.section_name, ".shstrtab")) fatal("section name string table section (.shstrtab) cannot be removed", .{});
+
+        // double loop since iteration needs to be restarted on modified array
+        while (true) {
+            for (elf.sections.items[1..]) |*section| {
+                const name = elf.getSectionName(section);
+                if (!std.mem.eql(u8, name, remove_section.section_name)) continue;
+
+                elf.removeSection(section.handle) catch |err| fatal(
+                    "failed removing section '{s}': {s}",
+                    .{ name, @errorName(err) },
+                );
+
+                break; // restart iteration => items are invalidated
+            } else break;
+        }
+
+        elf.compact() catch |err| fatal("failed compacting ELF file: {s}", .{@errorName(err)});
     }
 
     // --pad-to

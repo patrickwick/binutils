@@ -158,7 +158,6 @@ General Options:
     * PE/COFF: maybe if someone else wants to add it but I won't touch Windows with a ten foot pole
 * not tested: running objcopy on a 32bit system on 64bit ELF files. It should work but may not
 * OS or processor specific ELF types are not supported (std.elf.ET is exhaustive, would need an own implementation)
-* requires zig 0.14.0-dev.2051+b1361f237 or later. A zig 0.13.0 backport will follow
 
 ### Current Zig Limitations
 

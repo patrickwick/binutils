@@ -253,81 +253,39 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         try out.writeByteNTimes(' ', type_indentation - type_name.len);
 
         const flags = flags: {
-            var f = [_]u8{' '} ** 3;
-            var offset: u8 = 0;
+            const MAX_FLAGS = 3;
+
+            const Flags = struct {
+                f: [MAX_FLAGS]u8,
+                offset: u8,
+
+                fn insert(self: *@This(), flag: u8) void {
+                    if (self.offset >= self.f.len) return;
+                    self.f[self.offset] = flag;
+                    self.offset += 1;
+                }
+            };
+            var flags = Flags{
+                .f = [_]u8{' '} ** 3,
+                .offset = 0,
+            };
 
             // sorted according to "Key to Flags" legend
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_WRITE) != 0) {
-                f[offset] = 'W';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_ALLOC) != 0) {
-                f[offset] = 'A';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_EXECINSTR) != 0) {
-                f[offset] = 'X';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_MERGE) != 0) {
-                f[offset] = 'M';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_STRINGS) != 0) {
-                f[offset] = 'S';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_INFO_LINK) != 0) {
-                f[offset] = 'I';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_LINK_ORDER) != 0) {
-                f[offset] = 'L';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_OS_NONCONFORMING) != 0) {
-                f[offset] = 'O';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_GROUP) != 0) {
-                f[offset] = 'G';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_TLS) != 0) {
-                f[offset] = 'T';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_COMPRESSED) != 0) {
-                f[offset] = 'C';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_EXCLUDE) != 0) {
-                f[offset] = 'E';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_GNU_RETAIN) != 0) {
-                f[offset] = 'R';
-                offset += 1;
-            }
-
-            if (offset < f.len and (h.sh_flags & std.elf.SHF_X86_64_LARGE) != 0) {
-                f[offset] = 'l';
-                offset += 1;
-            }
-
-            break :flags f;
+            if ((h.sh_flags & std.elf.SHF_WRITE) != 0) flags.insert('W');
+            if ((h.sh_flags & std.elf.SHF_ALLOC) != 0) flags.insert('A');
+            if ((h.sh_flags & std.elf.SHF_EXECINSTR) != 0) flags.insert('X');
+            if ((h.sh_flags & std.elf.SHF_MERGE) != 0) flags.insert('M');
+            if ((h.sh_flags & std.elf.SHF_STRINGS) != 0) flags.insert('S');
+            if ((h.sh_flags & std.elf.SHF_INFO_LINK) != 0) flags.insert('I');
+            if ((h.sh_flags & std.elf.SHF_LINK_ORDER) != 0) flags.insert('L');
+            if ((h.sh_flags & std.elf.SHF_OS_NONCONFORMING) != 0) flags.insert('O');
+            if ((h.sh_flags & std.elf.SHF_GROUP) != 0) flags.insert('G');
+            if ((h.sh_flags & std.elf.SHF_TLS) != 0) flags.insert('T');
+            if ((h.sh_flags & std.elf.SHF_COMPRESSED) != 0) flags.insert('C');
+            if ((h.sh_flags & std.elf.SHF_EXCLUDE) != 0) flags.insert('E');
+            if ((h.sh_flags & std.elf.SHF_GNU_RETAIN) != 0) flags.insert('R');
+            if ((h.sh_flags & std.elf.SHF_X86_64_LARGE) != 0) flags.insert('l');
+            break :flags flags.f;
         };
 
         try out.print("0x{x:0>16} 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} {s}\n", .{

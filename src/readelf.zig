@@ -74,12 +74,12 @@ fn printSymbolTable(symbol_table: *Elf.Section, input: std.fs.File, out: std.io.
                 };
 
                 try out.print(
-                    \\{d} 0x{s} 0x{s} {s} {s}
+                    \\{d} 0x{x:0>8} 0x{x:0>8} {s} {s}
                     \\
                 , .{
                     i,
-                    intToHex(@as(u32, @truncate(entry.st_value))),
-                    intToHex(@as(u32, @truncate(entry.st_size))),
+                    @as(u32, @truncate(entry.st_value)),
+                    @as(u32, @truncate(entry.st_size)),
                     @tagName(st_type),
                     name,
                 });
@@ -139,26 +139,9 @@ fn printElfHeader(out: std.io.AnyWriter, elf: *const Elf) !void {
     try out.print(
         \\
         \\ELF Header:
-        \\  Magic:   {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s} {s}
+        \\  Magic:   {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2}
         \\
-    , .{
-        intToHex(eb[0]),
-        intToHex(eb[1]),
-        intToHex(eb[2]),
-        intToHex(eb[3]),
-        intToHex(eb[4]),
-        intToHex(eb[5]),
-        intToHex(eb[6]),
-        intToHex(eb[7]),
-        intToHex(eb[8]),
-        intToHex(eb[9]),
-        intToHex(eb[10]),
-        intToHex(eb[11]),
-        intToHex(eb[12]),
-        intToHex(eb[13]),
-        intToHex(eb[14]),
-        intToHex(eb[15]),
-    });
+    , .{ eb[0], eb[1], eb[2], eb[3], eb[4], eb[5], eb[6], eb[7], eb[8], eb[9], eb[10], eb[11], eb[12], eb[13], eb[14], eb[15] });
 
     try out.print(
         \\  Class:                             {s}
@@ -347,11 +330,11 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
             break :flags f;
         };
 
-        try out.print("0x{s} 0x{s} 0x{s} 0x{s} {s}\n", .{
-            intToHex(h.sh_addr),
-            intToHex(@as(u32, @truncate(h.sh_offset))),
-            intToHex(@as(u32, @truncate(h.sh_size))),
-            intToHex(@as(u32, @truncate(h.sh_entsize))),
+        try out.print("0x{x:0>16} 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} {s}\n", .{
+            h.sh_addr,
+            @as(u32, @truncate(h.sh_offset)),
+            @as(u32, @truncate(h.sh_size)),
+            @as(u32, @truncate(h.sh_entsize)),
             flags,
         });
     }
@@ -363,12 +346,6 @@ fn printElfSectionHeaders(out: std.io.AnyWriter, elf: *const Elf) !void {
         \\  C (compressed), E (exclude), R (retain), l (large)
         \\
     );
-}
-
-inline fn intToHex(data: anytype) [@sizeOf(@TypeOf(data)) * 2]u8 {
-    var bytes = std.mem.toBytes(data);
-    std.mem.reverse(u8, &bytes);
-    return std.fmt.bytesToHex(bytes, .lower);
 }
 
 fn verboseFileType(e_type: Elf.Type) []const u8 {
@@ -420,12 +397,12 @@ fn printElfProgramHeaders(in: anytype, out: std.io.AnyWriter, elf: *const Elf) !
         const indentation = 15;
         try out.writeByteNTimes(' ', @max(indentation, program_header_type.len) - program_header_type.len);
 
-        try out.print("0x{s} 0x{s} 0x{s} 0x{s} 0x{s}", .{
-            intToHex(@as(u32, @truncate(h.p_offset))),
-            intToHex(h.p_vaddr),
-            intToHex(h.p_paddr),
-            intToHex(@as(u32, @truncate(h.p_filesz))),
-            intToHex(@as(u32, @truncate(h.p_memsz))),
+        try out.print("0x{x:0>8} 0x{x:0>16} 0x{x:0>16} 0x{x:0>8} 0x{x:0>8}", .{
+            @as(u32, @truncate(h.p_offset)),
+            h.p_vaddr,
+            h.p_paddr,
+            @as(u32, @truncate(h.p_filesz)),
+            @as(u32, @truncate(h.p_memsz)),
         });
 
         if (h.p_type == std.elf.PT_INTERP) {
